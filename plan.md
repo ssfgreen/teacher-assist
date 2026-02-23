@@ -1,17 +1,27 @@
 # Plan: TypeScript Agent Architecture for teacher-assist
 
 ## Context
-The project needs a CLI-driven agent system to run teacher workflows (lesson planning, memory updates, etc.). The workspace already has markdown files describing the teacher's context, classes, and pedagogy. The goal is a clean TypeScript runtime that reads plugin definitions, assembles context, and calls Anthropic or OpenAI APIs via native fetch — no SDKs, no framework bloat.
+The project needs a CLI-driven agent system to run teacher workflows (lesson planning, memory updates, etc.).
+
+The workspace already has markdown files describing the teacher's context, classes, and pedagogy.
+
+The goal is a clean TypeScript runtime that reads plugin definitions, assembles context, and calls Anthropic (through the anthropic-sdk-typescript) https://github.com/anthropics/anthropic-sdk-typescript and OpenAI through openai-node https://github.com/openai/openai-node.
+
+Note that the CLI-driven interface is the MVP. As educators are not familiar with programming environments, the future project will have a frontend with login, workspace file editing (using a similar UI to obsidian folder / md editing ) with a space for educators to upload relevant assets. The result is a transparent, editable environment mirroring the agentic claude-code style software engineering for lesson design and creation.
 
 ---
 
 ## Architecture Overview
 
-Mental model from README is preserved: **skills provide context, commands provide entry points, agents provide execution.**
+Mental model from README is preserved: **skills provide context, commands provide entry points, agents provide execution.** the addition is the **workspace** which provides persistent educator relevant context.
 
 Invocation syntax: `bun src/cli.ts plugin:command "user input"`
 - `lesson-planning:create-lesson "recursion for 1B"`
 - `update-memory:classes "1B now has 28 students"`
+
+Agents should be able to call these commands themselves. So if during a conversation with a teacher about creating lesson materials for *1B* we discover that the class now has 28 students, then the agent should directly update the workspace and inform the teacher that they are doing this.
+
+**Hooks**
 
 ---
 
