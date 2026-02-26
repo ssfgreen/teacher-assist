@@ -1,6 +1,6 @@
-# teacher-assist — Technical Development Spec
+# Technical Development Spec
 
-Companion to the [Product & Research Specification](./teacher-assist-product-spec.md). This document covers architecture, behaviour, evaluation strategy, and implementation tasks. It assumes familiarity with the product rationale and phasing described there.
+Companion to the [Product & Research Specification](./product-spec.md). This document covers architecture, behaviour, evaluation strategy, and implementation tasks. It assumes familiarity with the product rationale and phasing described there.
 
 -----
 
@@ -12,7 +12,7 @@ The runtime is a tool-use loop. The real value lives in markdown definitions and
 ┌──────────────────────────────────────────────────────────┐
 │  Web UI (Phase 1) / CLI                                  │
 │  Split-pane: workspace editor + chat                     │
-│  "lesson-planning:create-lesson 'recursion for 1B'"      │
+│  "create lesson on recursion for 1B"                     │
 └────────────────────────┬─────────────────────────────────┘
                          │
               ┌──────────▼──────────┐
@@ -28,9 +28,9 @@ The runtime is a tool-use loop. The real value lives in markdown definitions and
 │  }                                                       │
 │                                                          │
 │  Tools available to planner agent:                       │
-│  ┌────────┐ ┌──────────────┐ ┌──────────────┐           │
-│  │ file_* │ │ read_skill   │ │ update_tasks │           │
-│  └────────┘ └──────────────┘ └──────────────┘           │
+│  ┌────────┐ ┌──────────────┐ ┌──────────────┐            │
+│  │ file_* │ │ read_skill   │ │ update_tasks │            │
+│  └────────┘ └──────────────┘ └──────────────┘            │
 │                                                          │
 │  Phase 2 additions:                                      │
 │  ┌─────────────────┐ ┌───────────────────────────┐       │
@@ -67,18 +67,18 @@ The runtime is a tool-use loop. The real value lives in markdown definitions and
 
 The architecture is intentionally aligned with Claude Code and the Anthropic Agent SDK so that the same skill files, workspace content, and conventions work in both the custom agent loop and directly with Claude Code during development and iteration. The runtime uses an OpenAI-compatible provider adapter (Phase 2) for model comparison studies, while file/skill/tool conventions remain Claude-compatible.
 
-| Concept | Claude Code | Anthropic Agent SDK | OpenAI Agents SDK | teacher-assist |
-|---|---|---|---|---|
-| Core loop | Agentic tool-use loop | `query()` async generator | `Runner.run()` | `runAgentLoop()` |
-| Multi-agent (isolated) | Subagents | `Task` tool | Agents as tools | `spawn_subagent` (Phase 2) |
-| Multi-agent (shared) | — | — | Handoffs | `transfer_to_*` with context injection (Phase 2) |
-| Context | CLAUDE.md | System prompt | Instructions | CLAUDE.md + workspace/ |
-| Skills | Skills directories with SKILL.md | Progressive (3-tier) | N/A | Progressive (3-tier) |
-| Validation | — | Hooks (PreToolUse) | Guardrails | Hooks (some implement guardrails) |
-| Persistence | JSONL transcripts | `resume` by session ID | Sessions | Sessions (JSON) |
-| Observability | — | `SDKResultMessage` | Tracing with spans | Traces with spans + sessionId |
-| Safety limits | — | `maxTurns`, `maxBudgetUsd` | `max_turns` | `maxTurns`, `maxBudgetUsd` |
-| Structured output | — | `outputFormat` | `output_type` | `outputSchema` |
+| Concept                | Claude Code                      | Anthropic Agent SDK        | OpenAI Agents SDK  | teacher-assist                                   |
+| ---------------------- | -------------------------------- | -------------------------- | ------------------ | ------------------------------------------------ |
+| Core loop              | Agentic tool-use loop            | `query()` async generator  | `Runner.run()`     | `runAgentLoop()`                                 |
+| Multi-agent (isolated) | Subagents                        | `Task` tool                | Agents as tools    | `spawn_subagent` (Phase 2)                       |
+| Multi-agent (shared)   | —                                | —                          | Handoffs           | `transfer_to_*` with context injection (Phase 2) |
+| Context                | CLAUDE.md                        | System prompt              | Instructions       | CLAUDE.md + workspace/                           |
+| Skills                 | Skills directories with SKILL.md | Progressive (3-tier)       | N/A                | Progressive (3-tier)                             |
+| Validation             | —                                | Hooks (PreToolUse)         | Guardrails         | Hooks (some implement guardrails)                |
+| Persistence            | JSONL transcripts                | `resume` by session ID     | Sessions           | Sessions (JSON)                                  |
+| Observability          | —                                | `SDKResultMessage`         | Tracing with spans | Traces with spans + sessionId                    |
+| Safety limits          | —                                | `maxTurns`, `maxBudgetUsd` | `max_turns`        | `maxTurns`, `maxBudgetUsd`                       |
+| Structured output      | —                                | `outputFormat`             | `output_type`      | `outputSchema`                                   |
 
 ### Claude Code Compatibility
 
@@ -196,6 +196,7 @@ The agent loop is the core runtime. It takes an agent definition, optional comma
 3. Assemble the system prompt from agent instructions, workspace context, skill manifest, and command framing
 4. Load session messages if resuming, append the new user input
 5. Enter the loop:
+
    - Check safety limits (maxTurns, maxBudgetUsd). Return error status if exceeded
    - Run **preModel** hooks
    - Call the model with system prompt, messages, and tool definitions
@@ -215,17 +216,17 @@ Hooks are lifecycle callbacks that run at defined points in the agent loop. They
 
 **Lifecycle points:**
 
-| Hook | When it runs | Typical use |
-|---|---|---|
-| preLoop | Before first model call, after user input received | Input validation guardrails, input logging |
-| postLoop | After final model response (no more tool calls) | Output validation guardrails, teacher adjudication gate, output logging |
-| preModel | Before each model call | Message inspection, token budget checks |
-| postModel | After each model response | Response logging, content filtering |
-| preTool | Before each tool execution | Tool call validation, permission checks |
-| postTool | After each tool execution | Result logging, result modification |
-| onHandoff | When an agent hands off to another (Phase 2) | Logging, policy checks, context validation |
-| onSubagentStart | When a subagent is spawned (Phase 2) | Logging, budget allocation |
-| onSubagentEnd | When a subagent completes (Phase 2) | Result inspection, logging |
+| Hook            | When it runs                                       | Typical use                                                             |
+| --------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
+| preLoop         | Before first model call, after user input received | Input validation guardrails, input logging                              |
+| postLoop        | After final model response (no more tool calls)    | Output validation guardrails, teacher adjudication gate, output logging |
+| preModel        | Before each model call                             | Message inspection, token budget checks                                 |
+| postModel       | After each model response                          | Response logging, content filtering                                     |
+| preTool         | Before each tool execution                         | Tool call validation, permission checks                                 |
+| postTool        | After each tool execution                          | Result logging, result modification                                     |
+| onHandoff       | When an agent hands off to another (Phase 2)       | Logging, policy checks, context validation                              |
+| onSubagentStart | When a subagent is spawned (Phase 2)               | Logging, budget allocation                                              |
+| onSubagentEnd   | When a subagent completes (Phase 2)                | Result inspection, logging                                              |
 
 **Abort behaviour:** Any hook may throw a hook abort error with a name and reason. This immediately terminates the agent loop and returns an error result. This is how guardrails work — they are hooks that validate content and abort if validation fails.
 
@@ -391,23 +392,23 @@ The model adapter handles format differences between providers: system prompt pl
 
 **Planner agent tools (Phase 1):**
 
-| Tool | Behaviour |
-|---|---|
-| read_file | Returns file content with line numbers |
-| write_file | Creates or overwrites a file |
-| str_replace | Replaces an exact string match in a file. Fails if the string is not found or appears more than once |
-| list_directory | Returns directory listing with nesting |
-| read_skill | Loads skill content by reference. `read_skill backward-design` returns SKILL.md (Tier 2). `read_skill backward-design/framework` returns framework.md (Tier 3). Returns an error if the skill or file doesn't exist |
-| update_tasks | Adds, updates, or completes tasks in the session task list |
+| Tool           | Behaviour                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| read_file      | Returns file content with line numbers                                                               |
+| write_file     | Creates or overwrites a file                                                                         |
+| str_replace    | Replaces an exact string match in a file. Fails if the string is not found or appears more than once |
+| list_directory | Returns directory listing with nesting                                                               |
+| read_skill     | Loads skill content by reference. `read_skill backward-design` returns SKILL.md (Tier 2). `read_skill backward-design/framework` returns framework.md (Tier 3). Returns an error if the skill or file doesn't exist |
+| update_tasks   | Adds, updates, or completes tasks in the session task list                                           |
 
 **Note on bash:** The `bash` tool is available for eval harness execution and developer use via Claude Code, but is not included in the planner agent's tool set. The planner agent operates only on file tools, skill reading, and task management. This avoids unnecessary attack surface and keeps the agent focused on its planning domain.
 
 **Phase 2 additions:**
 
-| Tool | Behaviour |
-|---|---|
+| Tool           | Behaviour                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
 | spawn_subagent | Spawns a named agent in isolated context with structured task context (decisions, constraints, deliverable). Returns the subagent's final output and decision summary as a tool result |
-| transfer_to_* | Dynamically generated from agent's handoffs list. Requires structured context parameter (decisions, constraints, reason, open questions). Triggers agent swap in the loop with context injection |
+| transfer_to_*  | Dynamically generated from agent's handoffs list. Requires structured context parameter (decisions, constraints, reason, open questions). Triggers agent swap in the loop with context injection |
 
 ### Workspace Content
 
@@ -451,29 +452,29 @@ The project-level context file, compatible with Claude Code. Describes the proje
 
 Markdown files with YAML frontmatter. The frontmatter configures the agent; the body provides system prompt instructions.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| model | string | required | Model identifier |
-| provider | string | required | `anthropic` or `openai` |
-| workspace | string[] | `[]` | Workspace file references to include in context |
-| skills | string[] | `[]` | Skill directory names for manifest and progressive loading |
-| tools | string[] | `[]` (all) | Tool names to make available. Empty means all built-in tools except bash |
-| hooks | string[] | `[]` | Named hooks to run during this agent's loop |
-| handoffs | string[] | `[]` | Agent names this agent can hand off to (Phase 2) |
-| outputSchema | object | none | JSON Schema for structured output |
-| maxTurns | number | 25 | Maximum loop iterations |
-| maxBudgetUsd | number | none | Maximum API spend |
+| Field        | Type     | Default    | Description                                                              |
+| ------------ | -------- | ---------- | ------------------------------------------------------------------------ |
+| model        | string   | required   | Model identifier                                                         |
+| provider     | string   | required   | `anthropic` or `openai`                                                  |
+| workspace    | string[] | `[]`       | Workspace file references to include in context                          |
+| skills       | string[] | `[]`       | Skill directory names for manifest and progressive loading               |
+| tools        | string[] | `[]` (all) | Tool names to make available. Empty means all built-in tools except bash |
+| hooks        | string[] | `[]`       | Named hooks to run during this agent's loop                              |
+| handoffs     | string[] | `[]`       | Agent names this agent can hand off to (Phase 2)                         |
+| outputSchema | object   | none       | JSON Schema for structured output                                        |
+| maxTurns     | number   | 25         | Maximum loop iterations                                                  |
+| maxBudgetUsd | number   | none       | Maximum API spend                                                        |
 
 #### Command definitions
 
 Markdown files with YAML frontmatter. The body provides task-specific framing appended to the system prompt.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| agent | string | required | Agent to invoke |
-| description | string | required | Shown in `--list` |
-| mode | string | `single` | `single` (one response) or `interactive` (REPL / chat) |
-| writes | string | none | Expected output path |
+| Field       | Type   | Default  | Description                                            |
+| ----------- | ------ | -------- | ------------------------------------------------------ |
+| agent       | string | required | Agent to invoke                                        |
+| description | string | required | Shown in `--list`                                      |
+| mode        | string | `single` | `single` (one response) or `interactive` (REPL / chat) |
+| writes      | string | none     | Expected output path                                   |
 
 #### Skills (3-tier directory structure)
 
@@ -489,8 +490,8 @@ skills/
 
 **SKILL.md frontmatter** provides the Tier 1 manifest entry:
 
-| Field | Type | Description |
-|---|---|---|
+| Field       | Type   | Description                                             |
+| ----------- | ------ | ------------------------------------------------------- |
 | description | string | One-line summary for the Tier 1 manifest (~10-15 words) |
 
 The SKILL.md body is the Tier 2 content. It should reference available Tier 3 files so the agent knows what deeper content exists.
@@ -659,15 +660,15 @@ Goal: working system sufficient to run a user study with 6-10 teachers. Single p
 
 Build the minimum vertical slice: call a model, execute tools, loop until done.
 
-| ID | Task | Acceptance criteria |
-|---|---|---|
+| ID  | Task                            | Acceptance criteria                                                                                  |
+| --- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | 1.1 | Project scaffolding + CLAUDE.md | Bun project compiles, test runner works, environment config loaded. CLAUDE.md at project root describes the project, workspace, and skills directories for Claude Code compatibility |
-| 1.2 | Core types | Message, tool call, tool definition, model request/response, agent definition, adjudication decision types compile. Introduce incrementally alongside code that uses them |
-| 1.3 | Anthropic model adapter | Sends correctly formatted requests to Anthropic API. Parses responses including tool use content blocks. Returns normalised response with token counts |
-| 1.4 | Tool registry | Register tools by name. Resolve tools for an agent (filtered subset — planner gets file tools, read_skill, update_tasks; bash excluded). Generate tool definition schemas for model requests |
-| 1.5 | File tools | read_file, write_file, str_replace, list_directory operating on a configurable workspace path. str_replace fails clearly on missing or ambiguous matches |
-| 1.6 | Bash tool (dev/eval only) | Execute shell commands with configurable timeout and working directory. Return stdout/stderr. Not included in planner agent's tool set |
-| 1.7 | Agent loop (basic) | Runs the model-tool cycle. Terminates when model responds without tool calls. Terminates at maxTurns with error status. Tool errors returned as messages to the model, not crashes |
+| 1.2 | Core types                      | Message, tool call, tool definition, model request/response, agent definition, adjudication decision types compile. Introduce incrementally alongside code that uses them |
+| 1.3 | Anthropic model adapter         | Sends correctly formatted requests to Anthropic API. Parses responses including tool use content blocks. Returns normalised response with token counts |
+| 1.4 | Tool registry                   | Register tools by name. Resolve tools for an agent (filtered subset — planner gets file tools, read_skill, update_tasks; bash excluded). Generate tool definition schemas for model requests |
+| 1.5 | File tools                      | read_file, write_file, str_replace, list_directory operating on a configurable workspace path. str_replace fails clearly on missing or ambiguous matches |
+| 1.6 | Bash tool (dev/eval only)       | Execute shell commands with configurable timeout and working directory. Return stdout/stderr. Not included in planner agent's tool set |
+| 1.7 | Agent loop (basic)              | Runs the model-tool cycle. Terminates when model responds without tool calls. Terminates at maxTurns with error status. Tool errors returned as messages to the model, not crashes |
 
 **Deliverable:** Can run the agent loop with a hardcoded agent definition, execute file tools, and get a text response.
 
@@ -675,16 +676,16 @@ Build the minimum vertical slice: call a model, execute tools, loop until done.
 
 Make the agent context-aware with workspace, 3-tier skills, and prompt assembly.
 
-| ID | Task | Acceptance criteria |
-|---|---|---|
-| 2.1 | Frontmatter parser | Parses agent, command, and skill SKILL.md files. Validates required fields, applies defaults, rejects invalid values |
-| 2.2 | Workspace loader | Reads markdown files referenced in agent definition. Returns assembled content for prompt injection |
-| 2.3 | Skill discovery | Scans skill directories within a plugin. Each skill is a directory containing a SKILL.md. Extracts `description` from SKILL.md frontmatter for Tier 1 manifest. Indexes available Tier 3 files within each directory |
+| ID  | Task                     | Acceptance criteria                                                                                  |
+| --- | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| 2.1 | Frontmatter parser       | Parses agent, command, and skill SKILL.md files. Validates required fields, applies defaults, rejects invalid values |
+| 2.2 | Workspace loader         | Reads markdown files referenced in agent definition. Returns assembled content for prompt injection  |
+| 2.3 | Skill discovery          | Scans skill directories within a plugin. Each skill is a directory containing a SKILL.md. Extracts `description` from SKILL.md frontmatter for Tier 1 manifest. Indexes available Tier 3 files within each directory |
 | 2.4 | read_skill tool (3-tier) | `read_skill <name>` returns SKILL.md body content (Tier 2). `read_skill <name>/<file>` returns a specific reference file (Tier 3). Returns clear error for nonexistent skills or files. Traces record which tier was loaded |
-| 2.5 | System prompt assembly | Composes prompt from agent body, workspace, Tier 1 skill manifest, command framing, task list. Sections wrapped in XML tags. Tier 1 manifest contains descriptions only — no SKILL.md bodies or Tier 3 content. Correct ordering verified by snapshot tests |
-| 2.6 | Plugin discovery | Scans plugin directory. Resolves agents, commands, skills (as directories), hooks by name within a plugin |
-| 2.7 | Seed workspace content | Teacher profile, 2-3 class profiles (anonymised need descriptors only), pedagogy preferences. CfE Computing Science and at least one other subject's curriculum references with progression relationships encoded (see Workspace Content section) |
-| 2.8 | Seed skills (3-tier) | 6 skills as directories: backward-design, differentiation, lesson-structure, retrieval-practice, cognitive-load, formative-assessment. Each with SKILL.md (overview, when to use, file index) and 1-3 Tier 3 reference files with detailed content grounded in evidence-based pedagogy |
+| 2.5 | System prompt assembly   | Composes prompt from agent body, workspace, Tier 1 skill manifest, command framing, task list. Sections wrapped in XML tags. Tier 1 manifest contains descriptions only — no SKILL.md bodies or Tier 3 content. Correct ordering verified by snapshot tests |
+| 2.6 | Plugin discovery         | Scans plugin directory. Resolves agents, commands, skills (as directories), hooks by name within a plugin |
+| 2.7 | Seed workspace content   | Teacher profile, 2-3 class profiles (anonymised need descriptors only), pedagogy preferences. CfE Computing Science and at least one other subject's curriculum references with progression relationships encoded (see Workspace Content section) |
+| 2.8 | Seed skills (3-tier)     | 6 skills as directories: backward-design, differentiation, lesson-structure, retrieval-practice, cognitive-load, formative-assessment. Each with SKILL.md (overview, when to use, file index) and 1-3 Tier 3 reference files with detailed content grounded in evidence-based pedagogy |
 
 **Deliverable:** `--dry-run` shows a fully assembled system prompt with workspace context and Tier 1 skill manifest. Agent can progressively load Tier 2 then Tier 3 content during execution. Skill files are readable by Claude Code directly.
 
@@ -692,14 +693,14 @@ Make the agent context-aware with workspace, 3-tier skills, and prompt assembly.
 
 Make it usable and observable.
 
-| ID | Task | Acceptance criteria |
-|---|---|---|
-| 3.1 | CLI entry point | Parses `<plugin>:<command> "<input>"` syntax. Routes to correct agent. `--list` shows available plugins and commands. `--dry-run` outputs assembled prompt |
+| ID  | Task                | Acceptance criteria                                                                                  |
+| --- | ------------------- | ---------------------------------------------------------------------------------------------------- |
+| 3.1 | CLI entry point     | Parses `<plugin>:<command> "<input>"` syntax. Routes to correct agent. `--list` shows available plugins and commands. `--dry-run` outputs assembled prompt |
 | 3.2 | Session persistence | Save and load sessions as JSON files. Sessions store id, plugin, command, agent, messages, tasks, adjudication decisions, timestamps |
-| 3.3 | Session resume | `--resume <id>` loads session and prepends messages to agent loop. Multi-turn conversation works across invocations |
-| 3.4 | Session listing | `--sessions` lists recent sessions sorted by last update. `--sessions --plugin <n>` filters by plugin |
-| 3.5 | Trace logging | Every agent loop run produces a trace with sessionId at top level. Spans for model calls (with token counts), tool calls (with args/results — including skill tier loaded), hook executions, and adjudication decisions. Traces written as JSON files |
-| 3.6 | Task tracking tool | update_tasks tool allows agent to add, update, and complete tasks. Tasks persisted in session |
+| 3.3 | Session resume      | `--resume <id>` loads session and prepends messages to agent loop. Multi-turn conversation works across invocations |
+| 3.4 | Session listing     | `--sessions` lists recent sessions sorted by last update. `--sessions --plugin <n>` filters by plugin |
+| 3.5 | Trace logging       | Every agent loop run produces a trace with sessionId at top level. Spans for model calls (with token counts), tool calls (with args/results — including skill tier loaded), hook executions, and adjudication decisions. Traces written as JSON files |
+| 3.6 | Task tracking tool  | update_tasks tool allows agent to add, update, and complete tasks. Tasks persisted in session        |
 
 **Deliverable:** Full CLI workflow — run a command, get a response, resume the session, inspect the trace.
 
@@ -707,19 +708,19 @@ Make it usable and observable.
 
 Implement hooks framework, guardrails, and core agent definitions.
 
-| ID | Task | Acceptance criteria |
-|---|---|---|
-| 4.1 | Hook framework | Resolve named hooks from plugin directory. Run hooks at correct lifecycle points (preLoop, postLoop, preModel, postModel, preTool, postTool). Merge agent-defined and caller-provided hooks. All hook executions recorded as trace spans |
-| 4.2 | Hook abort mechanism | Any hook can throw an abort error with name and reason. Loop terminates immediately. Trace is still written. Result status is `error_hook_abort` |
-| 4.3 | scope-check hook | preLoop hook that validates request is within lesson-planning domain. Rejects out-of-scope requests with clear reason |
-| 4.4 | age-appropriate hook | postLoop hook that validates output suitability for the year group in the workspace class profile |
-| 4.5 | curriculum-evidence hook | postLoop hook that validates curriculum references in agent output. Checks referenced files exist, line ranges valid, quoted text matches, no invented outcomes |
-| 4.6 | teacher-adjudication hook | postLoop hook that presents Accept/Revise/Generate Alternatives controls per section. Logs decisions to trace spans with decision type, section, timestamp, revision text. CLI mode: text prompt. Web UI mode: interactive controls |
-| 4.7 | Planner agent definition | Agent markdown with instructions, workspace refs, skills, hooks (excluding bash from tools). This is the core prompt engineering work — iterate using eval framework and/or Claude Code directly |
-| 4.8 | Command definitions | create-lesson and refine-lesson commands with task-specific framing |
-| 4.9 | Eval framework | Define eval cases with criteria. Run cases and produce scored markdown reports. Support structural, model-as-judge, and behavioural (trace-based) criteria types. Include curriculum evidence accuracy as a structural criterion |
-| 4.10 | Eval cases and baseline | Cases covering product spec scenarios (T1: standard lesson, T2: differentiation challenge, T3: new course). Establish baseline scores. Include behavioural criteria for skill tier usage and curriculum evidence accuracy |
-| 4.11 | Interactive mode | `--interactive` starts a multi-turn REPL with session persistence and adjudication prompts. For researcher-mediated user studies |
+| ID   | Task                      | Acceptance criteria                                                                                  |
+| ---- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 4.1  | Hook framework            | Resolve named hooks from plugin directory. Run hooks at correct lifecycle points (preLoop, postLoop, preModel, postModel, preTool, postTool). Merge agent-defined and caller-provided hooks. All hook executions recorded as trace spans |
+| 4.2  | Hook abort mechanism      | Any hook can throw an abort error with name and reason. Loop terminates immediately. Trace is still written. Result status is `error_hook_abort` |
+| 4.3  | scope-check hook          | preLoop hook that validates request is within lesson-planning domain. Rejects out-of-scope requests with clear reason |
+| 4.4  | age-appropriate hook      | postLoop hook that validates output suitability for the year group in the workspace class profile    |
+| 4.5  | curriculum-evidence hook  | postLoop hook that validates curriculum references in agent output. Checks referenced files exist, line ranges valid, quoted text matches, no invented outcomes |
+| 4.6  | teacher-adjudication hook | postLoop hook that presents Accept/Revise/Generate Alternatives controls per section. Logs decisions to trace spans with decision type, section, timestamp, revision text. CLI mode: text prompt. Web UI mode: interactive controls |
+| 4.7  | Planner agent definition  | Agent markdown with instructions, workspace refs, skills, hooks (excluding bash from tools). This is the core prompt engineering work — iterate using eval framework and/or Claude Code directly |
+| 4.8  | Command definitions       | create-lesson and refine-lesson commands with task-specific framing                                  |
+| 4.9  | Eval framework            | Define eval cases with criteria. Run cases and produce scored markdown reports. Support structural, model-as-judge, and behavioural (trace-based) criteria types. Include curriculum evidence accuracy as a structural criterion |
+| 4.10 | Eval cases and baseline   | Cases covering product spec scenarios (T1: standard lesson, T2: differentiation challenge, T3: new course). Establish baseline scores. Include behavioural criteria for skill tier usage and curriculum evidence accuracy |
+| 4.11 | Interactive mode          | `--interactive` starts a multi-turn REPL with session persistence and adjudication prompts. For researcher-mediated user studies |
 
 **Deliverable:** Research-ready CLI prototype. Run `create-lesson "iteration for 3B"`, get a pedagogically grounded lesson plan drawing on workspace context and progressively loaded skills, with curriculum evidence guardrail checking, resume sessions, generate traces with adjudication data, and evaluate quality against baseline.
 
@@ -727,14 +728,14 @@ Implement hooks framework, guardrails, and core agent definitions.
 
 Minimal local web interface for user studies.
 
-| ID | Task | Acceptance criteria |
-|---|---|---|
-| 5.1 | Local server | Bun/Vite dev server serving the UI on localhost. WebSocket or HTTP bridge to agent loop |
+| ID  | Task                     | Acceptance criteria                                                                                  |
+| --- | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| 5.1 | Local server             | Bun/Vite dev server serving the UI on localhost. WebSocket or HTTP bridge to agent loop              |
 | 5.2 | Workspace editor sidebar | CodeMirror/Monaco editor showing workspace markdown files. File tree navigation. Changes persist to filesystem on save |
-| 5.3 | Chat window | Displays agent responses with section structure. Sends user messages to agent loop. Shows typing/loading state |
-| 5.4 | Adjudication controls | Accept / Revise / Generate Alternatives buttons rendered inline after each section. Decisions routed through teacher-adjudication hook |
-| 5.5 | Session management | Resume previous sessions from UI. Session list view |
-| 5.6 | `--serve` flag | CLI flag to start the web UI server instead of the text REPL |
+| 5.3 | Chat window              | Displays agent responses with section structure. Sends user messages to agent loop. Shows typing/loading state |
+| 5.4 | Adjudication controls    | Accept / Revise / Generate Alternatives buttons rendered inline after each section. Decisions routed through teacher-adjudication hook |
+| 5.5 | Session management       | Resume previous sessions from UI. Session list view                                                  |
+| 5.6 | `--serve` flag           | CLI flag to start the web UI server instead of the text REPL                                         |
 
 **Deliverable:** Teacher-usable study interface. Open browser, see workspace on left and chat on right, run planning tasks with inline adjudication controls, all backed by the same agent loop as the CLI.
 
@@ -744,16 +745,16 @@ Minimal local web interface for user studies.
 
 Goal: add subagents and handoffs with structured context injection, enabling ablation studies against Phase 1 baseline. Add OpenAI provider for model comparison.
 
-| ID | Task | Acceptance criteria |
-|---|---|---|
-| 2.1 | Subagent tool | Spawns a named agent in isolated context (fresh messages, inherited workspace, structured task context, own maxTurns). Returns final output with decision summary as tool result. Depth capped at 1 — subagents cannot spawn subagents or hand off |
-| 2.2 | Handoff tool generation | Dynamically generates transfer_to_* tools from agent's handoffs list. Each tool requires structured context parameter (decisions, constraints, reason, open questions). Triggers agent swap with context injection |
-| 2.3 | Agent loop extensions | Handoff path: validate context, inject context block, swap agent, reassemble prompt, resolve tools, continue with same messages. Subagent path: nested loop with task context, return summary. onHandoff, onSubagentStart, onSubagentEnd hooks fire at appropriate points |
-| 2.4 | Specialist agents | pedagogy-reviewer, resource-creator, differentiation-specialist agent definitions with appropriate workspace refs, skills, and instructions |
-| 2.5 | OpenAI adapter | Model adapter for OpenAI API handling format differences: tool calling, structured output, cost/token accounting, trace normalisation. Provider override via CLI flag |
-| 2.6 | Ablation eval cases | Same scenarios as Phase 1 baseline, run against single-agent and multi-agent configurations, across providers. Include skill tier usage comparison and curriculum evidence accuracy comparison |
-| 2.7 | Comparative eval tooling | Side-by-side scoring of two configurations with cost/quality tradeoff reporting |
-| 2.8 | Update-memory plugin | Plugin for teacher self-service workspace updates, if needed for study design |
+| ID  | Task                     | Acceptance criteria                                                                                  |
+| --- | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| 2.1 | Subagent tool            | Spawns a named agent in isolated context (fresh messages, inherited workspace, structured task context, own maxTurns). Returns final output with decision summary as tool result. Depth capped at 1 — subagents cannot spawn subagents or hand off |
+| 2.2 | Handoff tool generation  | Dynamically generates transfer_to_* tools from agent's handoffs list. Each tool requires structured context parameter (decisions, constraints, reason, open questions). Triggers agent swap with context injection |
+| 2.3 | Agent loop extensions    | Handoff path: validate context, inject context block, swap agent, reassemble prompt, resolve tools, continue with same messages. Subagent path: nested loop with task context, return summary. onHandoff, onSubagentStart, onSubagentEnd hooks fire at appropriate points |
+| 2.4 | Specialist agents        | pedagogy-reviewer, resource-creator, differentiation-specialist agent definitions with appropriate workspace refs, skills, and instructions |
+| 2.5 | OpenAI adapter           | Model adapter for OpenAI API handling format differences: tool calling, structured output, cost/token accounting, trace normalisation. Provider override via CLI flag |
+| 2.6 | Ablation eval cases      | Same scenarios as Phase 1 baseline, run against single-agent and multi-agent configurations, across providers. Include skill tier usage comparison and curriculum evidence accuracy comparison |
+| 2.7 | Comparative eval tooling | Side-by-side scoring of two configurations with cost/quality tradeoff reporting                      |
+| 2.8 | Update-memory plugin     | Plugin for teacher self-service workspace updates, if needed for study design                        |
 
 -----
 
