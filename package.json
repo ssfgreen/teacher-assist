@@ -1,0 +1,12 @@
+{
+  "name": "teacher-assist",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4"
+  }
+}
