@@ -2,7 +2,7 @@
 
 Monorepo scaffold for the `teacher-assist` research prototype.
 
-This repository currently includes Sprint 0 and Sprint 1:
+This repository currently includes Sprint 0, Sprint 1, and Sprint 2:
 - Monorepo workspaces (`packages/backend`, `packages/frontend`)
 - Bun + TypeScript setup
 - Biome lint/format setup
@@ -11,6 +11,10 @@ This repository currently includes Sprint 0 and Sprint 1:
 - Frontend login/chat/session UI
 - Streaming responses (OpenAI + Anthropic + mock)
 - Disk-backed session persistence across backend restarts
+- Workspace file APIs with per-teacher filesystem storage
+- Workspace file APIs with per-teacher PostgreSQL persistence (filesystem mirror retained for local inspectability/fallback)
+- System prompt assembly with injected workspace context (`soul.md`, profiles, class/curriculum files)
+- Frontend workspace tab, file editor, class selector, and context-used indicator
 - Frontend and backend critical-path automated tests
 
 ## Prerequisites
@@ -72,7 +76,7 @@ cd packages/frontend
 bun run dev
 ```
 
-## Sprint 1 Test Commands
+## Sprint 2 Test Commands
 
 Run these from repository root unless noted.
 
@@ -122,8 +126,18 @@ curl -i -b /tmp/teacher_assist.cookie \
 # send chat message (replace SESSION_ID)
 curl -i -b /tmp/teacher_assist.cookie \
   -H "Content-Type: application/json" \
-  -d '{"provider":"openai","model":"gpt-4o","sessionId":"SESSION_ID","messages":[{"role":"user","content":"Plan a lesson on loops"}]}' \
+  -d '{"provider":"openai","model":"mock-openai","sessionId":"SESSION_ID","classRef":"3B","messages":[{"role":"user","content":"Plan a lesson on loops"}]}' \
   http://localhost:3001/api/chat
+
+# list workspace tree
+curl -i -b /tmp/teacher_assist.cookie http://localhost:3001/api/workspace
+
+# update a class profile
+curl -i -b /tmp/teacher_assist.cookie \
+  -H "Content-Type: application/json" \
+  -X PUT \
+  -d '{"content":"# Class 3B\n- Subject: Computing Science"}' \
+  http://localhost:3001/api/workspace/classes/3B.md
 ```
 
 5. Real provider one-shot smoke check (streaming + log capture):
@@ -140,7 +154,7 @@ Optional env overrides:
 Logs are written to:
 - `packages/backend/.data/smoke/providers-<timestamp>.json`
 
-## Sprint 1 Verification Checklist
+## Sprint 2 Verification Checklist
 
 - `bun install` completes without dependency errors
 - `bun run lint` exits with code `0`
@@ -154,6 +168,10 @@ Logs are written to:
 - Chat requests return assistant responses
 - Chat responses stream incrementally in the UI
 - Sessions persist after backend restart
+- Workspace tab shows seeded files (`soul.md`, `teacher.md`, `pedagogy.md`, `classes/`, `curriculum/`)
+- Workspace file edits save and reload correctly
+- Chat response contains workspace context metadata and UI indicator
+- Class selector sends `classRef` to backend
 - PostgreSQL container is healthy via `docker ps`
 
 ## Database Migrations
@@ -161,6 +179,7 @@ Logs are written to:
 Sprint 0 includes:
 - `packages/backend/db/migrations/001_teachers.sql`
 - `packages/backend/db/migrations/002_sessions.sql`
+- `packages/backend/db/migrations/003_workspace_files.sql`
 
 A migration runner is not wired yet. For manual application, use your preferred SQL client against the database from `docker-compose.yml`.
 
@@ -176,3 +195,5 @@ A migration runner is not wired yet. For manual application, use your preferred 
 
 - No migration runner wired yet
 - Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
+- Workspace editor is currently a plain textarea (CodeMirror/Monaco integration deferred)
+- Teachers/sessions are still persisted in local store JSON; workspace now persists in PostgreSQL when `DATABASE_URL` is available

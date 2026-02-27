@@ -1,4 +1,4 @@
-import type { ChatMessage, ModelResponse, Provider } from "../types";
+import type { ChatApiResponse, ChatMessage, Provider } from "../types";
 import { apiFetch } from "./client";
 
 export async function sendChat(params: {
@@ -6,8 +6,9 @@ export async function sendChat(params: {
   provider: Provider;
   model: string;
   sessionId?: string;
-}): Promise<{ response: ModelResponse; sessionId: string }> {
-  return apiFetch<{ response: ModelResponse; sessionId: string }>("/api/chat", {
+  classRef?: string;
+}): Promise<ChatApiResponse> {
+  return apiFetch<ChatApiResponse>("/api/chat", {
     method: "POST",
     body: JSON.stringify(params),
   });
@@ -19,9 +20,10 @@ export async function sendChatStream(
     provider: Provider;
     model: string;
     sessionId?: string;
+    classRef?: string;
   },
   onDelta: (delta: string) => void,
-): Promise<{ response: ModelResponse; sessionId: string }> {
+): Promise<ChatApiResponse> {
   const response = await fetch("/api/chat", {
     method: "POST",
     credentials: "include",
@@ -43,7 +45,7 @@ export async function sendChatStream(
   const decoder = new TextDecoder();
 
   let buffer = "";
-  let donePayload: { response: ModelResponse; sessionId: string } | null = null;
+  let donePayload: ChatApiResponse | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -69,7 +71,7 @@ export async function sendChatStream(
       const data = JSON.parse(dataLine.slice("data:".length).trim()) as
         | { text: string }
         | { error: string }
-        | { response: ModelResponse; sessionId: string };
+        | ChatApiResponse;
 
       if (eventType === "delta" && "text" in data) {
         onDelta(data.text);

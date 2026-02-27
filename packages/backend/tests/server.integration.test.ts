@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import { resetAuthSeedForTests } from "../src/auth";
 import { createHandler } from "../src/server";
 import { createAuthToken, resetStores, upsertTeacher } from "../src/store";
+import { cleanupWorkspaceUuidDirectoriesForTests } from "../src/workspace";
 
 const baseUrl = "http://localhost";
 
@@ -17,11 +18,13 @@ describe("server integration", () => {
   beforeEach(() => {
     resetStores();
     resetAuthSeedForTests();
+    cleanupWorkspaceUuidDirectoriesForTests();
   });
 
   afterEach(() => {
     resetStores();
     resetAuthSeedForTests();
+    cleanupWorkspaceUuidDirectoriesForTests();
   });
 
   it("requires auth for protected endpoints", async () => {
@@ -358,5 +361,106 @@ describe("server integration", () => {
 
     expect(updatedSession.provider).toBe("anthropic");
     expect(updatedSession.model).toBe("mock-anthropic");
+  });
+
+  it("supports workspace seed/read/write/delete and chat context metadata", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const treeResponse = await request("/api/workspace", {
+      headers: { cookie },
+    });
+    expect(treeResponse.status).toBe(200);
+    const treeBody = (await treeResponse.json()) as {
+      tree: Array<{ path: string }>;
+    };
+    expect(treeBody.tree.length > 0).toBe(true);
+
+    const writeClassResponse = await request(
+      "/api/workspace/classes/3B/PROFILE.md",
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          content: "# Class 3B\nSubject: Computing Science",
+        }),
+      },
+    );
+    expect(writeClassResponse.status).toBe(200);
+
+    const writeCurriculumResponse = await request(
+      "/api/workspace/curriculum/computing-science.md",
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          content: "# CfE Computing Science",
+        }),
+      },
+    );
+    expect(writeCurriculumResponse.status).toBe(200);
+
+    const readClassResponse = await request(
+      "/api/workspace/classes/3B/PROFILE.md",
+      {
+        headers: { cookie },
+      },
+    );
+    expect(readClassResponse.status).toBe(200);
+
+    const readClassBody = (await readClassResponse.json()) as {
+      content: string;
+    };
+    expect(readClassBody.content).toContain("Class 3B");
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        classRef: "3B",
+        messages: [{ role: "user", content: "Create a loops lesson" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+    const chatBody = (await chatResponse.json()) as {
+      workspaceContextLoaded: string[];
+    };
+    expect(chatBody.workspaceContextLoaded.includes("soul.md")).toBe(true);
+    expect(
+      chatBody.workspaceContextLoaded.includes("classes/3B/PROFILE.md"),
+    ).toBe(true);
+
+    const deleteClassResponse = await request(
+      "/api/workspace/classes/3B/PROFILE.md",
+      {
+        method: "DELETE",
+        headers: { cookie },
+      },
+    );
+    expect(deleteClassResponse.status).toBe(204);
+
+    const deleteSoulResponse = await request("/api/workspace/soul.md", {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(deleteSoulResponse.status).toBe(400);
   });
 });

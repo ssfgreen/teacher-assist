@@ -4,10 +4,10 @@
 
 `teacher-assist` is a monorepo with a Bun backend and a Vite/React frontend.
 
-- `packages/backend`: Auth, chat, sessions, provider adapters, streaming API.
-- `packages/frontend`: Login/chat UI, session sidebar, model selection, streamed response rendering.
+- `packages/backend`: Auth, chat, sessions, workspace APIs, prompt assembly, provider adapters, streaming API.
+- `packages/frontend`: Login/chat UI, session sidebar, workspace editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 + Sprint 1 with several hardening additions.
+The current implementation is Sprint 0 + Sprint 1 + Sprint 2 with several hardening additions.
 
 ## Backend Runtime
 
@@ -24,17 +24,22 @@ The backend is a Bun HTTP server exposing `/api/*` routes.
 
 ### Chat
 
-`POST /api/chat` supports two modes:
+`POST /api/chat` supports two modes and now injects workspace-derived system context:
 
-- Non-stream mode: returns JSON `{ response, sessionId }`.
+- Non-stream mode: returns JSON `{ response, sessionId, workspaceContextLoaded }`.
 - Stream mode (`stream: true`): returns SSE with events:
   - `start`
   - `delta`
   - `ping`
-  - `done`
+  - `done` (includes `workspaceContextLoaded`)
   - `error`
 
-`POST /api/chat` also accepts optional `maxTokens` and forwards provider-appropriate token limit fields.
+`POST /api/chat` accepts optional `maxTokens` and `classRef`, and forwards provider-appropriate token limit fields.
+
+System prompt assembly order:
+1. `<assistant-identity>` from `workspace/{teacherId}/soul.md` (with default fallback)
+2. `<agent-instructions>` static planner instructions
+3. `<workspace-context>` from teacher/pedagogy plus detected class/curriculum files
 
 Provider integration:
 
@@ -60,6 +65,24 @@ Persistence strategy:
 - This enables persistence across backend restarts.
 - Auth tokens and rate-limit counters remain in-memory.
 
+### Workspace
+
+- Workspace files are persisted in PostgreSQL (`workspace_files` table) keyed by `teacher_id` and `path`.
+- Files are also mirrored to `workspace/{teacherId}/` for local inspectability and filesystem fallback.
+- Defaults are seeded on login / first access:
+  - `soul.md`
+  - `teacher.md`
+  - `pedagogy.md`
+  - `classes/README.md`
+  - `curriculum/README.md`
+- Class profiles are expected at `classes/{classRef}/PROFILE.md`.
+- Endpoints:
+  - `GET /api/workspace`
+  - `GET /api/workspace/*path`
+  - `PUT /api/workspace/*path`
+  - `DELETE /api/workspace/*path` (`soul.md` protected)
+  - `POST /api/workspace/seed`
+
 ### Stability Notes
 
 - SSE path is guarded against closed-controller enqueue errors.
@@ -83,6 +106,7 @@ Single-page React app with Zustand state stores.
 
 - Login/logout with auth bootstrap (`/api/auth/me`).
 - Session list, create, resume, delete.
+- Sidebar has stacked workspace/session sections. Clicking a workspace markdown file opens the editor in the main (two-thirds) pane, with autosave + manual save.
 - Chat send with streaming UX:
   - Creates in-progress assistant bubble.
   - Appends streamed deltas live.
@@ -91,18 +115,21 @@ Single-page React app with Zustand state stores.
   - `Enter` sends.
   - `Shift+Enter` newline.
 - Provider/model selector with localStorage persistence.
+- Optional class selector (`classRef`) sourced from workspace class files.
+- Context indicator showing which workspace files were used for the latest response.
 
 ### API Layer
 
 - `api/auth.ts`
 - `api/sessions.ts`
 - `api/chat.ts` (includes SSE parser for stream mode)
+- `api/workspace.ts`
 
 ## Testing Strategy
 
 ### Backend
 
-- Bun tests cover auth, chat, sessions, provider switching, access control, stream mode, and key-missing errors.
+- Bun tests cover auth, chat, sessions, workspace CRUD, prompt assembly/class extraction, provider switching, access control, stream mode, and key-missing errors.
 
 ### Frontend
 
@@ -111,7 +138,10 @@ Single-page React app with Zustand state stores.
   - streamed chat flow,
   - session resume,
   - model/provider propagation,
-  - auth/chat error handling.
+  - auth/chat error handling,
+  - workspace tab open/read flow,
+  - classRef propagation,
+  - context indicator rendering.
 
 ## Key Engineering Decisions
 

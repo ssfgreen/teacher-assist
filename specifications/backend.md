@@ -122,12 +122,27 @@ DELETE /api/sessions/:id
 
 **Goal:** Teachers have a persistent workspace of markdown files. When they chat, relevant workspace context is injected into the system prompt. The system prompt is assembled from workspace content in the correct order.
 
+### Status (Implemented 2026-02-27)
+
+- [x] Workspace filesystem storage under `workspace/{teacherId}/`
+- [x] Non-destructive workspace seeding with defaults (`soul.md`, `teacher.md`, `pedagogy.md`, `curriculum/`, `classes/`)
+- [x] Workspace CRUD API (`GET/PUT/DELETE /api/workspace/*path`, `GET /api/workspace`, `POST /api/workspace/seed`)
+- [x] `soul.md` delete protection
+- [x] Class reference extraction from user messages (`3B` pattern) and optional `classRef` request override
+- [x] System prompt assembly using XML-tagged sections in defined order
+- [x] Prompt token estimation and runtime logging
+- [x] `/api/chat` response metadata includes `workspaceContextLoaded`
+- [x] Unit + integration coverage for workspace and prompt ordering
+- [x] Workspace persistence also stored in PostgreSQL (`workspace_files`) keyed per teacher
+- [x] Backend tests clean up UUID-named workspace artifacts after each run
+
 ### Deliverables
 
 #### Workspace Storage & API
 
 - Workspace files stored on filesystem under `workspace/{teacherId}/` (keeps markdown files editable and inspectable; alternative: PostgreSQL if multi-tenancy requires it)
 - Seed workspace templates on first login: `soul.md`, `teacher.md`, `pedagogy.md`, `curriculum/` (empty stubs), `classes/` (empty stubs)
+- Class profiles are stored as `classes/{classRef}/PROFILE.md` (e.g. `classes/3B/PROFILE.md`)
 - `GET /api/workspace` — list workspace file tree for current teacher
 - `GET /api/workspace/*path` — read file content
 - `PUT /api/workspace/*path` — create or update file content

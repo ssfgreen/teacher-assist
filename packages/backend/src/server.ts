@@ -12,6 +12,7 @@ import {
   callModel,
   streamModel,
 } from "./model";
+import { DEFAULT_AGENT_INSTRUCTIONS, assembleSystemPrompt } from "./prompt";
 import {
   appendSessionMessages,
   checkRateLimit,
@@ -21,6 +22,15 @@ import {
   readSession,
 } from "./store";
 import type { ChatMessage, ModelResponse, Provider } from "./types";
+import {
+  deleteWorkspaceFile,
+  listClassRefs,
+  listWorkspaceTree,
+  loadWorkspaceContext,
+  readWorkspaceFile,
+  seedWorkspaceForTeacher,
+  writeWorkspaceFile,
+} from "./workspace";
 
 function json(data: unknown, status = 200, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(data), {
@@ -39,6 +49,21 @@ async function parseJson<T>(request: Request): Promise<T> {
 
 function unauthorized(): Response {
   return json({ error: "Unauthorized" }, 401);
+}
+
+function parseWorkspacePath(pathname: string): string {
+  const prefix = "/api/workspace/";
+  if (!pathname.startsWith(prefix)) {
+    throw new Error("Invalid workspace path");
+  }
+
+  const rawPath = pathname.slice(prefix.length);
+  const decoded = decodeURIComponent(rawPath);
+  if (!decoded) {
+    throw new Error("Invalid workspace path");
+  }
+
+  return decoded;
 }
 
 function buildAssistantMessages(
@@ -116,6 +141,7 @@ export async function createHandler(request: Request): Promise<Response> {
     if (!result) {
       return json({ error: "Invalid credentials" }, 401);
     }
+    await seedWorkspaceForTeacher(result.teacher.id);
 
     return json(
       {
@@ -142,7 +168,68 @@ export async function createHandler(request: Request): Promise<Response> {
     }
 
     if (pathname === "/api/auth/me" && request.method === "GET") {
+      await seedWorkspaceForTeacher(teacher.id);
       return json(teacher);
+    }
+
+    if (pathname === "/api/workspace" && request.method === "GET") {
+      const tree = await listWorkspaceTree(teacher.id);
+      const classRefs = await listClassRefs(teacher.id);
+      return json({
+        tree,
+        classRefs,
+      });
+    }
+
+    if (pathname === "/api/workspace/seed" && request.method === "POST") {
+      await seedWorkspaceForTeacher(teacher.id);
+      return json({
+        ok: true,
+      });
+    }
+
+    if (pathname.startsWith("/api/workspace/") && request.method === "GET") {
+      try {
+        const relativePath = parseWorkspacePath(pathname);
+        const content = await readWorkspaceFile(teacher.id, relativePath);
+        return json({
+          path: relativePath,
+          content,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Invalid workspace path";
+        return json({ error: message }, 400);
+      }
+    }
+
+    if (pathname.startsWith("/api/workspace/") && request.method === "PUT") {
+      const body = await parseJson<{ content: string }>(request);
+      try {
+        const relativePath = parseWorkspacePath(pathname);
+        await writeWorkspaceFile(teacher.id, relativePath, body.content ?? "");
+        return json({
+          ok: true,
+          path: relativePath,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Invalid workspace path";
+        return json({ error: message }, 400);
+      }
+    }
+
+    if (pathname.startsWith("/api/workspace/") && request.method === "DELETE") {
+      try {
+        const relativePath = parseWorkspacePath(pathname);
+        await deleteWorkspaceFile(teacher.id, relativePath);
+        return new Response(null, { status: 204 });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Invalid workspace path";
+        const status = message === "Cannot delete soul.md" ? 400 : 404;
+        return json({ error: message }, status);
+      }
     }
 
     if (pathname === "/api/chat" && request.method === "POST") {
@@ -160,10 +247,28 @@ export async function createHandler(request: Request): Promise<Response> {
         sessionId?: string;
         stream?: boolean;
         maxTokens?: number;
+        classRef?: string;
       }>(request);
 
       assertValidProvider(body.provider);
       const provider = body.provider as Provider;
+      const workspaceContext = await loadWorkspaceContext({
+        teacherId: teacher.id,
+        messages: body.messages,
+        classRef: body.classRef,
+      });
+      const { systemPrompt, estimatedTokens } = assembleSystemPrompt({
+        assistantIdentity: workspaceContext.assistantIdentity,
+        agentInstructions: DEFAULT_AGENT_INSTRUCTIONS,
+        workspaceContext: workspaceContext.workspaceContextSections,
+      });
+      const modelMessages: ChatMessage[] = [
+        { role: "system", content: systemPrompt },
+        ...body.messages.filter((message) => message.role !== "system"),
+      ];
+      console.info(
+        `[prompt] teacher=${teacher.id} tokens=${estimatedTokens} classRef=${workspaceContext.classRef ?? "none"}`,
+      );
 
       if (body.stream) {
         const encoder = new TextEncoder();
@@ -206,7 +311,7 @@ export async function createHandler(request: Request): Promise<Response> {
                 response = await streamModel(
                   provider,
                   body.model,
-                  body.messages,
+                  modelMessages,
                   (delta) => {
                     pushEvent("delta", { text: delta });
                   },
@@ -246,6 +351,7 @@ export async function createHandler(request: Request): Promise<Response> {
               pushEvent("done", {
                 response,
                 sessionId: persisted.sessionId,
+                workspaceContextLoaded: workspaceContext.loadedPaths,
               });
               clearInterval(heartbeat);
               closeStream();
@@ -269,7 +375,7 @@ export async function createHandler(request: Request): Promise<Response> {
         response = await callModel(
           provider,
           body.model,
-          body.messages,
+          modelMessages,
           body.maxTokens,
         );
       } catch (error) {
@@ -297,6 +403,7 @@ export async function createHandler(request: Request): Promise<Response> {
       return json({
         response,
         sessionId: persisted.sessionId,
+        workspaceContextLoaded: workspaceContext.loadedPaths,
       });
     }
 

@@ -32,3 +32,26 @@ export interface ModelResponse {
   };
   stopReason: string;
 }
+
+export interface WorkspaceNode {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  children?: WorkspaceNode[];
+}
+
+export interface WorkspaceTreeResponse {
+  tree: WorkspaceNode[];
+  classRefs: string[];
+}
+
+export interface WorkspaceFileResponse {
+  path: string;
+  content: string;
+}
+
+export interface ChatApiResponse {
+  response: ModelResponse;
+  sessionId: string;
+  workspaceContextLoaded?: string[];
+}

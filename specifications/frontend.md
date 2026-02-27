@@ -141,11 +141,24 @@ App
 
 **Goal:** Teachers can view and edit their workspace files (teacher profile, class descriptions, pedagogy preferences, `soul.md`, curriculum references) in a sidebar editor. The chat indicates when workspace context is being used.
 
+### Status (Implemented 2026-02-27)
+
+- [x] Sidebar tabs for `Sessions` and `Workspace`
+- [x] Workspace tree rendering with folders/files and pinned visual treatment for `soul.md`
+- [x] Workspace file open + edit + save flows (`PUT /api/workspace/*path`)
+- [x] Debounced auto-save with manual save control
+- [x] File creation and deletion (with `soul.md` deletion blocked)
+- [x] Workspace seed action (`POST /api/workspace/seed`)
+- [x] Class selector populated from workspace classes and sent as `classRef`
+- [x] Context indicator for `workspaceContextLoaded` metadata on chat responses
+- [x] Frontend tests for workspace read flow, classRef propagation, and context indicator rendering
+- [ ] CodeMirror/Monaco editor integration (currently plain textarea editor)
+
 ### Deliverables
 
 #### Workspace Sidebar
 
-- Split the sidebar into two sections (tabs or accordion): **Sessions** and **Workspace**
+- Sidebar shows stacked sections with **Workspace** above **Sessions**
 - Workspace file tree: hierarchical display of workspace files
   - `soul.md` (pinned at top, distinct icon — "Assistant Identity")
   - `teacher.md`
@@ -180,7 +193,7 @@ App
 
 #### Updated Chat Input
 
-- Optional class reference selector: dropdown or tag input to specify which class the prompt is about (e.g. "3B"). Populates from workspace `classes/` directory.
+- Optional class reference selector: dropdown or tag input to specify which class the prompt is about (e.g. "3B"). Populates from workspace `classes/{classRef}/PROFILE.md` directories.
 - This sends `classRef` to the backend so the correct class profile and curriculum are loaded
 
 #### Layout Evolution

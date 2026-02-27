@@ -1,0 +1,192 @@
+import { create } from "zustand";
+
+import {
+  deleteWorkspaceFile,
+  listWorkspace,
+  readWorkspaceFile,
+  seedWorkspace,
+  writeWorkspaceFile,
+} from "../api/workspace";
+import type { WorkspaceNode } from "../types";
+
+interface WorkspaceState {
+  tree: WorkspaceNode[];
+  classRefs: string[];
+  openFilePath: string | null;
+  openFileContent: string;
+  dirty: boolean;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  expandedFolders: Record<string, boolean>;
+  initialise: () => Promise<void>;
+  seed: () => Promise<void>;
+  toggleFolder: (path: string) => void;
+  openFile: (path: string) => Promise<void>;
+  closeFile: () => void;
+  setOpenFileContent: (content: string) => void;
+  saveOpenFile: () => Promise<void>;
+  createFile: (path: string, content?: string) => Promise<void>;
+  deleteFile: (path: string) => Promise<void>;
+}
+
+function workspaceError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+  tree: [],
+  classRefs: [],
+  openFilePath: null,
+  openFileContent: "",
+  dirty: false,
+  loading: false,
+  saving: false,
+  error: null,
+  expandedFolders: {
+    classes: true,
+    curriculum: true,
+  },
+
+  initialise: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await listWorkspace();
+      set({
+        tree: data.tree,
+        classRefs: data.classRefs,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: workspaceError(error, "Failed to load workspace"),
+      });
+    }
+  },
+
+  seed: async () => {
+    set({ loading: true, error: null });
+    try {
+      await seedWorkspace();
+      const data = await listWorkspace();
+      set({
+        tree: data.tree,
+        classRefs: data.classRefs,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: workspaceError(error, "Failed to seed workspace"),
+      });
+    }
+  },
+
+  toggleFolder: (path) => {
+    set((state) => ({
+      expandedFolders: {
+        ...state.expandedFolders,
+        [path]: !state.expandedFolders[path],
+      },
+    }));
+  },
+
+  openFile: async (path) => {
+    set({ loading: true, error: null });
+    try {
+      const file = await readWorkspaceFile(path);
+      set({
+        openFilePath: file.path,
+        openFileContent: file.content,
+        dirty: false,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: workspaceError(error, "Failed to open workspace file"),
+      });
+    }
+  },
+
+  closeFile: () => {
+    set({
+      openFilePath: null,
+      openFileContent: "",
+      dirty: false,
+    });
+  },
+
+  setOpenFileContent: (content) => {
+    set({ openFileContent: content, dirty: true });
+  },
+
+  saveOpenFile: async () => {
+    const path = get().openFilePath;
+    if (!path) {
+      return;
+    }
+
+    set({ saving: true, error: null });
+    try {
+      await writeWorkspaceFile(path, get().openFileContent);
+      const data = await listWorkspace();
+      set({
+        tree: data.tree,
+        classRefs: data.classRefs,
+        dirty: false,
+        saving: false,
+      });
+    } catch (error) {
+      set({
+        saving: false,
+        error: workspaceError(error, "Failed to save workspace file"),
+      });
+    }
+  },
+
+  createFile: async (path, content = "# New file\n") => {
+    set({ loading: true, error: null });
+    try {
+      await writeWorkspaceFile(path, content);
+      const data = await listWorkspace();
+      const file = await readWorkspaceFile(path);
+      set({
+        tree: data.tree,
+        classRefs: data.classRefs,
+        openFilePath: file.path,
+        openFileContent: file.content,
+        dirty: false,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: workspaceError(error, "Failed to create workspace file"),
+      });
+    }
+  },
+
+  deleteFile: async (path) => {
+    set({ loading: true, error: null });
+    try {
+      await deleteWorkspaceFile(path);
+      const data = await listWorkspace();
+      const shouldClose = get().openFilePath === path;
+      set({
+        tree: data.tree,
+        classRefs: data.classRefs,
+        openFilePath: shouldClose ? null : get().openFilePath,
+        openFileContent: shouldClose ? "" : get().openFileContent,
+        dirty: shouldClose ? false : get().dirty,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: workspaceError(error, "Failed to delete workspace file"),
+      });
+    }
+  },
+}));
