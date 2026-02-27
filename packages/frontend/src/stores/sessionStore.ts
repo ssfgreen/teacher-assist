@@ -27,20 +27,24 @@ interface SessionState {
 
 const MODEL_KEY = "teacher-assist:model";
 
+function defaultModelForProvider(provider: Provider): string {
+  return provider === "anthropic" ? "mock-anthropic" : "mock-openai";
+}
+
 function readModelPref(): { provider: Provider; model: string } {
   const raw = localStorage.getItem(MODEL_KEY);
   if (!raw) {
-    return { provider: "openai", model: "gpt-4o" };
+    return { provider: "openai", model: defaultModelForProvider("openai") };
   }
 
   try {
     const parsed = JSON.parse(raw) as { provider: Provider; model: string };
     if (!parsed.provider || !parsed.model) {
-      return { provider: "openai", model: "gpt-4o" };
+      return { provider: "openai", model: defaultModelForProvider("openai") };
     }
     return parsed;
   } catch {
-    return { provider: "openai", model: "gpt-4o" };
+    return { provider: "openai", model: defaultModelForProvider("openai") };
   }
 }
 

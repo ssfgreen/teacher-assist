@@ -7,9 +7,9 @@ import {
   seedDefaultTeacher,
 } from "./auth";
 import {
+  ModelConfigurationError,
   assertValidProvider,
   callModel,
-  ModelConfigurationError,
 } from "./model";
 import {
   appendSessionMessages,
@@ -19,7 +19,7 @@ import {
   listSessions,
   readSession,
 } from "./store";
-import type { ChatMessage, Provider } from "./types";
+import type { ChatMessage, ModelResponse, Provider } from "./types";
 
 function json(data: unknown, status = 200, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(data), {
@@ -99,14 +99,16 @@ export async function createHandler(request: Request): Promise<Response> {
       assertValidProvider(body.provider);
       const provider = body.provider as Provider;
 
-      let response;
+      let response: ModelResponse;
       try {
         response = await callModel(provider, body.model, body.messages);
       } catch (error) {
         if (error instanceof ModelConfigurationError) {
           return json({ error: error.message }, 400);
         }
-        return json({ error: "Model request failed" }, 502);
+        const message =
+          error instanceof Error ? error.message : "Model request failed";
+        return json({ error: message }, 502);
       }
 
       const userAndAssistantMessages: ChatMessage[] = [];

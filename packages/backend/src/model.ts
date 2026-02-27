@@ -58,7 +58,6 @@ async function callOpenAI(
       role: message.role,
       content: message.content,
     })),
-    temperature: 0.3,
   });
 
   const content = completion.choices[0]?.message?.content ?? "";
@@ -78,8 +77,7 @@ async function callOpenAI(
       estimatedCostUsd: Number(
         (
           (usage?.total_tokens ??
-            estimateUsage(messages, content).totalTokens) *
-          0.000002
+            estimateUsage(messages, content).totalTokens) * 0.000002
         ).toFixed(6),
       ),
     },

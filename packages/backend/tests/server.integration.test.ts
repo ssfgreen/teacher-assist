@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
+
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import bcrypt from "bcrypt";
 
 import { resetAuthSeedForTests } from "../src/auth";
@@ -80,7 +81,7 @@ describe("server integration", () => {
         "content-type": "application/json",
         cookie,
       },
-      body: JSON.stringify({ provider: "openai", model: "gpt-4o" }),
+      body: JSON.stringify({ provider: "openai", model: "mock-openai" }),
     });
 
     expect(createSessionResponse.status).toBe(201);
@@ -96,7 +97,7 @@ describe("server integration", () => {
       },
       body: JSON.stringify({
         provider: "openai",
-        model: "gpt-4o",
+        model: "mock-openai",
         sessionId: createdSession.id,
         messages: [{ role: "user", content: "Plan a lesson" }],
       }),
@@ -149,7 +150,7 @@ describe("server integration", () => {
       },
       body: JSON.stringify({
         provider: "openai",
-        model: "gpt-4o",
+        model: "mock-openai",
         messages: [{ role: "user", content: "Create a lesson on loops" }],
       }),
     });
@@ -189,7 +190,7 @@ describe("server integration", () => {
         "content-type": "application/json",
         cookie: teacherOneCookie,
       },
-      body: JSON.stringify({ provider: "openai", model: "gpt-4o" }),
+      body: JSON.stringify({ provider: "openai", model: "mock-openai" }),
     });
     const teacherOneSession = (await createSessionResponse.json()) as {
       id: string;
@@ -236,5 +237,37 @@ describe("server integration", () => {
       },
     );
     expect(crossDeleteResponse.status).toBe(404);
+  });
+
+  it("returns 400 for real model when API key is missing", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const originalOpenAiKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "gpt-4o",
+        messages: [{ role: "user", content: "Plan a lesson" }],
+      }),
+    });
+
+    expect(chatResponse.status).toBe(400);
+
+    process.env.OPENAI_API_KEY = originalOpenAiKey;
   });
 });
