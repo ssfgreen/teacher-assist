@@ -46,6 +46,26 @@ function isMockModel(model: string): boolean {
   return model === "mock" || model.startsWith("mock-");
 }
 
+function chunkText(content: string): string[] {
+  const parts = content.match(/\S+\s*/g);
+  return parts ?? [content];
+}
+
+function resolveApiKey(provider: Provider): string {
+  const apiKey =
+    provider === "anthropic"
+      ? process.env.ANTHROPIC_API_KEY
+      : process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new ModelConfigurationError(
+      `Missing ${provider.toUpperCase()} API key. Select a mock model or configure the key.`,
+    );
+  }
+
+  return apiKey;
+}
+
 async function callOpenAI(
   model: string,
   messages: ChatMessage[],
@@ -85,6 +105,35 @@ async function callOpenAI(
   };
 }
 
+async function streamOpenAI(
+  model: string,
+  messages: ChatMessage[],
+  apiKey: string,
+  onDelta: (delta: string) => void,
+): Promise<ModelResponse> {
+  const client = new OpenAI({ apiKey });
+  const stream = await client.chat.completions.create({
+    model,
+    messages: messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
+    stream: true,
+  });
+
+  let content = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content ?? "";
+    if (!delta) {
+      continue;
+    }
+    content += delta;
+    onDelta(delta);
+  }
+
+  return normalize(content, messages);
+}
+
 async function callAnthropic(
   model: string,
   messages: ChatMessage[],
@@ -122,6 +171,39 @@ async function callAnthropic(
   };
 }
 
+export async function streamModel(
+  provider: Provider,
+  model: string,
+  messages: ChatMessage[],
+  onDelta: (delta: string) => void,
+): Promise<ModelResponse> {
+  const latestUserMessage =
+    [...messages].reverse().find((message) => message.role === "user")
+      ?.content ?? "";
+
+  if (isMockModel(model)) {
+    const content = `[mock:${provider}/${model}] ${latestUserMessage}`;
+    for (const chunk of chunkText(content)) {
+      onDelta(chunk);
+    }
+    return normalize(content, messages);
+  }
+
+  const apiKey = resolveApiKey(provider);
+
+  if (provider === "openai") {
+    return streamOpenAI(model, messages, apiKey, onDelta);
+  }
+
+  // Anthropic path currently falls back to non-streaming API call,
+  // then emits chunks for consistent SSE behaviour.
+  const response = await callAnthropic(model, messages, apiKey);
+  for (const chunk of chunkText(response.content)) {
+    onDelta(chunk);
+  }
+  return response;
+}
+
 export async function callModel(
   provider: Provider,
   model: string,
@@ -138,16 +220,7 @@ export async function callModel(
     );
   }
 
-  const apiKey =
-    provider === "anthropic"
-      ? process.env.ANTHROPIC_API_KEY
-      : process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    throw new ModelConfigurationError(
-      `Missing ${provider.toUpperCase()} API key. Select a mock model or configure the key.`,
-    );
-  }
+  const apiKey = resolveApiKey(provider);
 
   if (provider === "openai") {
     return callOpenAI(model, messages, apiKey);

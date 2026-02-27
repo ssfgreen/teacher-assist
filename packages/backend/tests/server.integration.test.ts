@@ -270,4 +270,39 @@ describe("server integration", () => {
 
     process.env.OPENAI_API_KEY = originalOpenAiKey;
   });
+
+  it("streams chat deltas and done event for stream mode", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const streamResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        stream: true,
+        messages: [{ role: "user", content: "Stream me" }],
+      }),
+    });
+
+    expect(streamResponse.status).toBe(200);
+    expect(streamResponse.headers.get("content-type")).toContain(
+      "text/event-stream",
+    );
+
+    const payload = await streamResponse.text();
+    expect(payload.includes("event: delta")).toBe(true);
+    expect(payload.includes("event: done")).toBe(true);
+  });
 });

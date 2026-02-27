@@ -8,3 +8,4 @@ coverage/
 *.log
 bun.lockb
 *.tsbuildinfo
+packages/backend/.data/

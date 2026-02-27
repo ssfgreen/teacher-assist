@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import type { ChatMessage, Provider, SessionRecord, Teacher } from "./types";
 
@@ -13,9 +15,73 @@ const MAX_REQUESTS_PER_MINUTE = 60;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const AUTH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+const DATA_DIR = resolve(process.cwd(), ".data");
+const STORE_PATH = resolve(DATA_DIR, "store.json");
+
+interface PersistedStore {
+  teachers: Teacher[];
+  sessions: SessionRecord[];
+}
+
+function ensureDataDir(): void {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function readStoreFromDisk(): PersistedStore {
+  ensureDataDir();
+
+  if (!existsSync(STORE_PATH)) {
+    return { teachers: [], sessions: [] };
+  }
+
+  try {
+    const raw = readFileSync(STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as PersistedStore;
+    return {
+      teachers: parsed.teachers ?? [],
+      sessions: parsed.sessions ?? [],
+    };
+  } catch {
+    return { teachers: [], sessions: [] };
+  }
+}
+
+function writeStoreToDisk(): void {
+  ensureDataDir();
+
+  const payload: PersistedStore = {
+    teachers: [...teachersById.values()],
+    sessions: [...sessionsById.values()],
+  };
+
+  writeFileSync(STORE_PATH, JSON.stringify(payload, null, 2));
+}
+
+function hydrateStoreFromDisk(): void {
+  const persisted = readStoreFromDisk();
+
+  teachersByEmail.clear();
+  teachersById.clear();
+  sessionsById.clear();
+
+  for (const teacher of persisted.teachers) {
+    teachersByEmail.set(teacher.email.toLowerCase(), teacher);
+    teachersById.set(teacher.id, teacher);
+  }
+
+  for (const session of persisted.sessions) {
+    sessionsById.set(session.id, session);
+  }
+}
+
+hydrateStoreFromDisk();
+
 export function upsertTeacher(teacher: Teacher): void {
   teachersByEmail.set(teacher.email.toLowerCase(), teacher);
   teachersById.set(teacher.id, teacher);
+  writeStoreToDisk();
 }
 
 export function getTeacherByEmail(email: string): Teacher | null {
@@ -93,6 +159,7 @@ export function createSession(params: {
     updatedAt: now,
   };
   sessionsById.set(session.id, session);
+  writeStoreToDisk();
   return session;
 }
 
@@ -126,6 +193,7 @@ export function appendSessionMessages(
     existing.model = model;
   }
   existing.updatedAt = new Date().toISOString();
+  writeStoreToDisk();
   return existing;
 }
 
@@ -135,6 +203,7 @@ export function deleteSession(id: string, teacherId: string): boolean {
     return false;
   }
   sessionsById.delete(id);
+  writeStoreToDisk();
   return true;
 }
 
@@ -144,4 +213,5 @@ export function resetStores(): void {
   sessionsById.clear();
   authTokens.clear();
   rateLimitMap.clear();
+  writeStoreToDisk();
 }

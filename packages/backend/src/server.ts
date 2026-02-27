@@ -10,6 +10,7 @@ import {
   ModelConfigurationError,
   assertValidProvider,
   callModel,
+  streamModel,
 } from "./model";
 import {
   appendSessionMessages,
@@ -38,6 +39,69 @@ async function parseJson<T>(request: Request): Promise<T> {
 
 function unauthorized(): Response {
   return json({ error: "Unauthorized" }, 401);
+}
+
+function buildAssistantMessages(
+  existingMessages: ChatMessage[],
+  assistantContent: string,
+): ChatMessage[] {
+  const userAndAssistantMessages: ChatMessage[] = [];
+  const lastUserMessage = [...existingMessages]
+    .reverse()
+    .find((msg) => msg.role === "user");
+
+  if (lastUserMessage) {
+    userAndAssistantMessages.push(lastUserMessage);
+  }
+
+  userAndAssistantMessages.push({
+    role: "assistant",
+    content: assistantContent,
+  });
+
+  return userAndAssistantMessages;
+}
+
+function persistChatResult(params: {
+  teacherId: string;
+  sessionId?: string;
+  provider: Provider;
+  model: string;
+  sourceMessages: ChatMessage[];
+  assistantContent: string;
+}): { sessionId: string } | { error: "Session not found" } {
+  const messagesToAppend = buildAssistantMessages(
+    params.sourceMessages,
+    params.assistantContent,
+  );
+
+  let sessionId = params.sessionId;
+  if (sessionId) {
+    const updated = appendSessionMessages(
+      sessionId,
+      params.teacherId,
+      messagesToAppend,
+      params.provider,
+      params.model,
+    );
+    if (!updated) {
+      return { error: "Session not found" };
+    }
+    return { sessionId };
+  }
+
+  const created = createSession({
+    teacherId: params.teacherId,
+    provider: params.provider,
+    model: params.model,
+    messages: messagesToAppend,
+  });
+  sessionId = created.id;
+  return { sessionId };
+}
+
+function sseEvent(event: string, payload: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
 }
 
 export async function createHandler(request: Request): Promise<Response> {
@@ -94,10 +158,109 @@ export async function createHandler(request: Request): Promise<Response> {
         provider: string;
         model: string;
         sessionId?: string;
+        stream?: boolean;
       }>(request);
 
       assertValidProvider(body.provider);
       const provider = body.provider as Provider;
+
+      if (body.stream) {
+        const encoder = new TextEncoder();
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            let closed = false;
+            const closeStream = () => {
+              if (closed) {
+                return;
+              }
+              closed = true;
+              try {
+                controller.close();
+              } catch {
+                // Ignore close errors when controller is already closed.
+              }
+            };
+
+            const pushEvent = (event: string, payload: unknown) => {
+              if (closed) {
+                return;
+              }
+              try {
+                controller.enqueue(encoder.encode(sseEvent(event, payload)));
+              } catch {
+                closed = true;
+              }
+            };
+
+            const run = async () => {
+              pushEvent("start", { ok: true });
+
+              const heartbeat = setInterval(() => {
+                pushEvent("ping", { t: Date.now() });
+              }, 5000);
+
+              let response: ModelResponse;
+              try {
+                response = await streamModel(
+                  provider,
+                  body.model,
+                  body.messages,
+                  (delta) => {
+                    pushEvent("delta", { text: delta });
+                  },
+                );
+              } catch (error) {
+                if (error instanceof ModelConfigurationError) {
+                  pushEvent("error", { error: error.message });
+                } else {
+                  const message =
+                    error instanceof Error
+                      ? error.message
+                      : "Model request failed";
+                  pushEvent("error", { error: message });
+                }
+                clearInterval(heartbeat);
+                closeStream();
+                return;
+              }
+
+              const persisted = persistChatResult({
+                teacherId: teacher.id,
+                sessionId: body.sessionId,
+                provider,
+                model: body.model,
+                sourceMessages: body.messages,
+                assistantContent: response.content,
+              });
+
+              if ("error" in persisted) {
+                pushEvent("error", { error: persisted.error });
+                clearInterval(heartbeat);
+                closeStream();
+                return;
+              }
+
+              pushEvent("done", {
+                response,
+                sessionId: persisted.sessionId,
+              });
+              clearInterval(heartbeat);
+              closeStream();
+            };
+
+            void run();
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+          },
+        });
+      }
 
       let response: ModelResponse;
       try {
@@ -111,43 +274,22 @@ export async function createHandler(request: Request): Promise<Response> {
         return json({ error: message }, 502);
       }
 
-      const userAndAssistantMessages: ChatMessage[] = [];
-      const lastUserMessage = [...body.messages]
-        .reverse()
-        .find((msg) => msg.role === "user");
-      if (lastUserMessage) {
-        userAndAssistantMessages.push(lastUserMessage);
-      }
-      userAndAssistantMessages.push({
-        role: "assistant",
-        content: response.content,
+      const persisted = persistChatResult({
+        teacherId: teacher.id,
+        sessionId: body.sessionId,
+        provider,
+        model: body.model,
+        sourceMessages: body.messages,
+        assistantContent: response.content,
       });
 
-      let sessionId = body.sessionId;
-      if (sessionId) {
-        const updated = appendSessionMessages(
-          sessionId,
-          teacher.id,
-          userAndAssistantMessages,
-          provider,
-          body.model,
-        );
-        if (!updated) {
-          return json({ error: "Session not found" }, 404);
-        }
-      } else {
-        const created = createSession({
-          teacherId: teacher.id,
-          provider,
-          model: body.model,
-          messages: userAndAssistantMessages,
-        });
-        sessionId = created.id;
+      if ("error" in persisted) {
+        return json({ error: persisted.error }, 404);
       }
 
       return json({
         response,
-        sessionId,
+        sessionId: persisted.sessionId,
       });
     }
 
@@ -229,6 +371,7 @@ export async function startServer(port = 3001): Promise<Server> {
   await seedDefaultTeacher();
   return Bun.serve({
     port,
+    idleTimeout: 120,
     fetch: createHandler,
   });
 }

@@ -79,6 +79,7 @@ Run these from repository root unless noted.
 bun run lint
 cd packages/backend && bun test
 cd ../frontend && bun run build
+cd ../..
 ```
 
 2. Start services for manual testing (use two terminals):

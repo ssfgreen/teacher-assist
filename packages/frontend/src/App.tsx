@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
-import { sendChat } from "./api/chat";
+import { sendChatStream } from "./api/chat";
 import Shell from "./components/layout/Shell";
 import { useAuthStore } from "./stores/authStore";
 import { useSessionStore } from "./stores/sessionStore";
@@ -132,30 +132,60 @@ export default function App() {
         { role: "user", content } as ChatMessage,
       ];
 
-      const response = await sendChat({
-        sessionId: activeSession.id,
-        provider,
-        model,
-        messages: nextMessages,
-      });
-
-      const updatedMessages: ChatMessage[] = [
-        ...nextMessages,
-        {
-          role: "assistant",
-          content: response.response.content,
-        },
-      ];
-
-      const updatedSession = {
+      let assistantContent = "";
+      const streamBaseSession = {
         ...activeSession,
         provider,
         model,
-        updatedAt: new Date().toISOString(),
-        messages: updatedMessages,
       };
 
-      upsertCurrentSession(updatedSession);
+      upsertCurrentSession({
+        ...streamBaseSession,
+        updatedAt: new Date().toISOString(),
+        messages: [
+          ...nextMessages,
+          {
+            role: "assistant",
+            content: "",
+          },
+        ],
+      });
+
+      const response = await sendChatStream(
+        {
+          sessionId: activeSession.id,
+          provider,
+          model,
+          messages: nextMessages,
+        },
+        (delta) => {
+          assistantContent += delta;
+          upsertCurrentSession({
+            ...streamBaseSession,
+            updatedAt: new Date().toISOString(),
+            messages: [
+              ...nextMessages,
+              {
+                role: "assistant",
+                content: assistantContent,
+              },
+            ],
+          });
+        },
+      );
+
+      upsertCurrentSession({
+        ...streamBaseSession,
+        id: response.sessionId,
+        updatedAt: new Date().toISOString(),
+        messages: [
+          ...nextMessages,
+          {
+            role: "assistant",
+            content: response.response.content,
+          },
+        ],
+      });
       setMessageInput("");
       await refreshSessions();
     } catch (error) {

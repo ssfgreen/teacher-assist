@@ -14,3 +14,9 @@ There are four documents
 
 - Tests
 - Linters
+
+## Architecture, readme and specifications
+
+- Keep an up-to-date ARCHITECTURE.md explaining the current architecture alongside key reasoning
+- Keep an up-to-date README.md
+- Keep specifications up to date with what has been done, including tasks that weren't previously in the spec document that were added along the way.
