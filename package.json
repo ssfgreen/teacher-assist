@@ -3,6 +3,9 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
+    "dev": "bun run dev:frontend",
+    "dev:frontend": "cd packages/frontend && bun run dev",
+    "dev:backend": "cd packages/backend && bun run dev",
     "lint": "biome check .",
     "format": "biome format --write ."
   },

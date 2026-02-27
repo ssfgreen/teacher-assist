@@ -8,7 +8,9 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "bcrypt": "^5.1.1"
+    "@anthropic-ai/sdk": "^0.40.1",
+    "bcrypt": "^5.1.1",
+    "openai": "^4.86.1"
   },
   "devDependencies": {
     "bun-types": "^1.1.10",

@@ -10,15 +10,15 @@ Companion to `backend.md`. Each sprint ships frontend and backend together — n
 
 ### Deliverables
 
-- Initialise `packages/frontend` with Vite + React + TypeScript
-- Tailwind CSS configuration (`tailwind.config.ts`) with project colour palette and typography
-- Component library foundation: decide on ShadCN/ui (customised) or raw Tailwind components
-- Base layout shell: responsive container, sidebar + main content area (empty for now)
-- Zustand store scaffolding: `useAuthStore`, `useSessionStore` (empty shells)
-- API client module (`api/client.ts`): base fetch wrapper with auth header injection, error handling, base URL config
-- TypeScript types shared with backend (import from shared types or duplicate with sync discipline)
-- Storybook or equivalent for isolated component development (optional but recommended)
-- Linting and formatting aligned with backend config
+- [x] Initialise `packages/frontend` with Vite + React + TypeScript
+- [x] Tailwind CSS configuration (`tailwind.config.ts`) with project colour palette and typography
+- [ ] Component library foundation: decide on ShadCN/ui (customised) or raw Tailwind components
+- [x] Base layout shell: responsive container, sidebar + main content area (empty for now)
+- [x] Zustand store scaffolding: `useAuthStore`, `useSessionStore` (empty shells)
+- [x] API client module (`api/client.ts`): base fetch wrapper with auth header injection, error handling, base URL config
+- [ ] TypeScript types shared with backend (import from shared types or duplicate with sync discipline)
+- [ ] Storybook or equivalent for isolated component development (optional but recommended)
+- [x] Linting and formatting aligned with backend config
 
 ### Component Inventory (shells only)
 
@@ -51,30 +51,30 @@ src/
 
 #### Auth UI
 
-- Login page: email + password form, error display, redirect to chat on success
-- Auth store (`useAuthStore`): login, logout, current teacher, loading states
-- Auth guard: redirect unauthenticated users to login
-- API client: automatically attach auth token/cookie to all requests
-- Logout button in app header
+- [x] Login page: email + password form, error display, redirect to chat on success
+- [x] Auth store (`useAuthStore`): login, logout, current teacher, loading states
+- [x] Auth guard: redirect unauthenticated users to login
+- [x] API client: automatically attach auth token/cookie to all requests
+- [x] Logout button in app header
 
 #### Chat Interface
 
-- `ChatWindow` component: scrollable message list + input area
-- Message rendering: user messages (right-aligned or distinct style) and assistant messages (left-aligned, markdown rendered)
-- Markdown rendering for assistant responses (use `react-markdown` or similar, with syntax highlighting for code blocks)
-- Input area: multi-line text input with send button (Enter to send, Shift+Enter for newline)
-- Model selector: dropdown to choose provider (Anthropic/OpenAI) and model (e.g. Claude Sonnet 4, GPT-4o). Persisted in session store.
-- Loading state: typing indicator while waiting for response
-- Error display: inline error messages if model call fails
+- [x] `ChatWindow` component: scrollable message list + input area
+- [x] Message rendering: user messages (right-aligned or distinct style) and assistant messages (left-aligned, markdown rendered)
+- [x] Markdown rendering for assistant responses (use `react-markdown` or similar, with syntax highlighting for code blocks)
+- [x] Input area: multi-line text input with send button (Enter to send, Shift+Enter for newline)
+- [x] Model selector: dropdown to choose provider (Anthropic/OpenAI) and model (e.g. Claude Sonnet 4, GPT-4o). Persisted in session store.
+- [x] Loading state: typing indicator while waiting for response
+- [x] Error display: inline error messages if model call fails
 
 #### Session Management
 
-- Session list in sidebar: shows recent sessions with timestamps and first message preview
-- Create new session (button or automatic on first message)
-- Resume session: click a session → loads messages → continues conversation
-- Delete session (with confirmation)
-- Session store (`useSessionStore`): current session, session list, create/load/delete operations
-- Active session indicator in sidebar
+- [x] Session list in sidebar: shows recent sessions with timestamps and first message preview
+- [x] Create new session (button or automatic on first message)
+- [x] Resume session: click a session → loads messages → continues conversation
+- [x] Delete session (with confirmation)
+- [x] Session store (`useSessionStore`): current session, session list, create/load/delete operations
+- [x] Active session indicator in sidebar
 
 #### API Integration
 
@@ -97,9 +97,9 @@ DELETE /api/sessions/:id
 
 #### Layout
 
-- App shell: narrow sidebar (sessions list) + main chat area
-- Header: app name, model selector, teacher name, logout
-- Responsive: sidebar collapsible on small screens
+- [x] App shell: narrow sidebar (sessions list) + main chat area
+- [x] Header: app name, model selector, teacher name, logout
+- [x] Responsive: sidebar collapsible on small screens
 
 ### Component Tree
 
@@ -121,11 +121,11 @@ App
 
 ### Tests
 
-- Auth flow: login → redirect → session created → logout → redirect to login
-- Chat flow: type message → send → loading indicator → response rendered
-- Session resume: click session → messages loaded → new message sent → appended
-- Model selector: change model → next message uses new model
-- Error handling: failed login shows error, failed chat shows inline error
+- [ ] Auth flow: login → redirect → session created → logout → redirect to login
+- [ ] Chat flow: type message → send → loading indicator → response rendered
+- [ ] Session resume: click session → messages loaded → new message sent → appended
+- [ ] Model selector: change model → next message uses new model
+- [ ] Error handling: failed login shows error, failed chat shows inline error
 
 ---
 

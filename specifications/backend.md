@@ -10,24 +10,24 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 
 ### Deliverables
 
-- Initialise monorepo with `packages/backend` and `packages/frontend` workspaces
-- Bun runtime with TypeScript configuration (`tsconfig.json` with strict mode)
-- PostgreSQL setup with Docker Compose for local dev
-- Database migrations infrastructure (numbered SQL files in `db/migrations/`)
-- Migration `001_teachers.sql`: `teachers` table (id, email, name, password_hash, created_at)
-- Migration `002_sessions.sql`: `sessions` table (id, teacher_id, plugin, command, agent_name, messages JSONB, tasks JSONB, created_at, updated_at)
-- Environment configuration (`.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AUTH_SECRET`)
-- Shared types package or shared types file between frontend and backend
-- Linting (Biome or ESLint) and formatting config
-- Basic test harness with Bun's built-in test runner
-- `CLAUDE.md` at project root
+- [x] Initialise monorepo with `packages/backend` and `packages/frontend` workspaces
+- [x] Bun runtime with TypeScript configuration (`tsconfig.json` with strict mode)
+- [x] PostgreSQL setup with Docker Compose for local dev
+- [x] Database migrations infrastructure (numbered SQL files in `db/migrations/`)
+- [x] Migration `001_teachers.sql`: `teachers` table (id, email, name, password_hash, created_at)
+- [x] Migration `002_sessions.sql`: `sessions` table (id, teacher_id, plugin, command, agent_name, messages JSONB, tasks JSONB, created_at, updated_at)
+- [ ] Environment configuration (`.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AUTH_SECRET`)
+- [ ] Shared types package or shared types file between frontend and backend
+- [x] Linting (Biome or ESLint) and formatting config
+- [x] Basic test harness with Bun's built-in test runner
+- [x] `CLAUDE.md` at project root
 
 ### Tests
 
-- Database connection and migration runner works
-- Teachers table CRUD operations
-- Sessions table CRUD operations
-- Environment variable loading
+- [ ] Database connection and migration runner works
+- [ ] Teachers table CRUD operations
+- [ ] Sessions table CRUD operations
+- [ ] Environment variable loading
 
 ### API Surface (none yet — internal only)
 
@@ -41,46 +41,46 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 
 #### Auth
 
-- Simple auth middleware: session-based (cookie + server-side session) or JWT
-- `POST /api/auth/login` — email + password → token/session
-- `POST /api/auth/logout`
-- `GET /api/auth/me` — returns current teacher profile
-- Password hashing with `bcrypt` or `argon2`
-- Auth guard middleware for all `/api/*` routes except login
+- [x] Simple auth middleware: session-based (cookie + server-side session) or JWT
+- [x] `POST /api/auth/login` — email + password → token/session
+- [x] `POST /api/auth/logout`
+- [x] `GET /api/auth/me` — returns current teacher profile
+- [x] Password hashing with `bcrypt` or `argon2`
+- [x] Auth guard middleware for all `/api/*` routes except login
 
 #### Model Adapter (`model.ts`)
 
-- Unified interface: `callModel(provider, model, messages, tools?, options?) → ModelResponse`
-- Anthropic adapter using `@anthropic-ai/sdk` — messages API, tool calling format
-- OpenAI adapter using `openai` SDK — chat completions API, function calling format
-- Response normalisation: both providers return `{ content, toolCalls, usage, stopReason }`
-- Token counting and cost estimation per call
-- Provider/model validation (reject unknown providers)
+- [x] Unified interface: `callModel(provider, model, messages, tools?, options?) → ModelResponse`
+- [x] Anthropic adapter using `@anthropic-ai/sdk` — messages API, tool calling format
+- [x] OpenAI adapter using `openai` SDK — chat completions API, function calling format
+- [x] Response normalisation: both providers return `{ content, toolCalls, usage, stopReason }`
+- [x] Token counting and cost estimation per call
+- [x] Provider/model validation (reject unknown providers)
 
 #### Chat API
 
-- `POST /api/chat` — accepts `{ messages, provider, model }`, returns model response
-- Messages follow a unified format: `{ role: 'user' | 'assistant' | 'system', content: string }`
-- Streams response via Server-Sent Events (SSE) OR returns complete response (start with complete, add SSE in a later sprint if needed)
-- Rate limiting per teacher (basic, in-memory)
+- [x] `POST /api/chat` — accepts `{ messages, provider, model }`, returns model response
+- [x] Messages follow a unified format: `{ role: 'user' | 'assistant' | 'system', content: string }`
+- [x] Streams response via Server-Sent Events (SSE) OR returns complete response (start with complete, add SSE in a later sprint if needed)
+- [x] Rate limiting per teacher (basic, in-memory)
 
 #### Session Persistence (basic)
 
-- `POST /api/sessions` — create a new session
-- `GET /api/sessions` — list sessions for current teacher (paginated, newest first)
-- `GET /api/sessions/:id` — get session with messages
-- `PUT /api/sessions/:id` — append messages to session
-- `DELETE /api/sessions/:id`
-- Sessions store: provider, model, messages array, timestamps
-- On every chat exchange, persist messages to the session
+- [x] `POST /api/sessions` — create a new session
+- [x] `GET /api/sessions` — list sessions for current teacher (paginated, newest first)
+- [x] `GET /api/sessions/:id` — get session with messages
+- [x] `PUT /api/sessions/:id` — append messages to session
+- [x] `DELETE /api/sessions/:id`
+- [x] Sessions store: provider, model, messages array, timestamps
+- [x] On every chat exchange, persist messages to the session
 
 ### Tests
 
-- **Unit:** Model adapter format translation (Anthropic ↔ internal, OpenAI ↔ internal), token counting, cost calculation
-- **Unit:** Auth middleware rejects unauthenticated requests, accepts valid tokens
-- **Unit:** Session CRUD operations
-- **Integration:** Full login → create session → send message → receive response → session persisted flow (mock model responses)
-- **Integration:** Provider switching (same session, different provider — should work)
+- [x] **Unit:** Model adapter format translation (Anthropic ↔ internal, OpenAI ↔ internal), token counting, cost calculation
+- [x] **Unit:** Auth middleware rejects unauthenticated requests, accepts valid tokens
+- [x] **Unit:** Session CRUD operations
+- [x] **Integration:** Full login → create session → send message → receive response → session persisted flow (mock model responses)
+- [ ] **Integration:** Provider switching (same session, different provider — should work)
 
 ### API Summary
 
