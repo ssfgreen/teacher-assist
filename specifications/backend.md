@@ -16,7 +16,7 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 - [x] Database migrations infrastructure (numbered SQL files in `db/migrations/`)
 - [x] Migration `001_teachers.sql`: `teachers` table (id, email, name, password_hash, created_at)
 - [x] Migration `002_sessions.sql`: `sessions` table (id, teacher_id, plugin, command, agent_name, messages JSONB, tasks JSONB, created_at, updated_at)
-- [ ] Environment configuration (`.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AUTH_SECRET`)
+- [x] Environment configuration (`.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AUTH_SECRET`)
 - [ ] Shared types package or shared types file between frontend and backend
 - [x] Linting (Biome or ESLint) and formatting config
 - [x] Basic test harness with Bun's built-in test runner
@@ -80,7 +80,27 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 - [x] **Unit:** Auth middleware rejects unauthenticated requests, accepts valid tokens
 - [x] **Unit:** Session CRUD operations
 - [x] **Integration:** Full login → create session → send message → receive response → session persisted flow (mock model responses)
-- [ ] **Integration:** Provider switching (same session, different provider — should work)
+- [x] **Integration:** Provider switching (same session, different provider — should work)
+
+#### Sprint 1 Additions Implemented
+
+- [x] Real streaming mode over SSE for `/api/chat` (`stream: true`) with `delta`/`done`/`error` events.
+- [x] True OpenAI streaming integration.
+- [x] True Anthropic streaming integration.
+- [x] Explicit mock-model behavior (`mock-*`) rather than silent fallback for real models.
+- [x] Real-model missing API key returns explicit configuration error.
+- [x] Session persistence to disk (`packages/backend/.data/store.json`) across backend restarts.
+- [x] SSE robustness hardening (heartbeat and safe controller-close handling).
+- [x] Optional `maxTokens` request support for `/api/chat` (non-stream and stream paths).
+- [x] Provider smoke test command `bun run smoke:providers` with JSON log output.
+
+#### Additional Critical Path Tests Implemented
+
+- [x] Logout revokes auth for subsequent protected calls.
+- [x] Chat without `sessionId` auto-creates a session.
+- [x] Cross-user session access is denied.
+- [x] Stream mode emits expected SSE events.
+- [x] Real model without key returns `400`.
 
 ### API Summary
 

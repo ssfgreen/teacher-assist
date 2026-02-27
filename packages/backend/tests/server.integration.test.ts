@@ -305,4 +305,58 @@ describe("server integration", () => {
     expect(payload.includes("event: delta")).toBe(true);
     expect(payload.includes("event: done")).toBe(true);
   });
+
+  it("supports provider switching on a session", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const createSessionResponse = await request("/api/sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({ provider: "openai", model: "mock-openai" }),
+    });
+
+    const createdSession = (await createSessionResponse.json()) as {
+      id: string;
+    };
+
+    const updateResponse = await request(`/api/sessions/${createdSession.id}`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "anthropic",
+        model: "mock-anthropic",
+        messages: [{ role: "user", content: "Switch provider" }],
+      }),
+    });
+
+    expect(updateResponse.status).toBe(200);
+
+    const getSessionResponse = await request(
+      `/api/sessions/${createdSession.id}`,
+      {
+        headers: { cookie },
+      },
+    );
+    const updatedSession = (await getSessionResponse.json()) as {
+      provider: string;
+      model: string;
+    };
+
+    expect(updatedSession.provider).toBe("anthropic");
+    expect(updatedSession.model).toBe("mock-anthropic");
+  });
 });

@@ -12,8 +12,8 @@ There are four documents
 
 ## Verification steps
 
-- Tests
-- Linters
+- Tests: Ensure critical path is always tested
+- Linters: Always run linting
 
 ## Architecture, readme and specifications
 

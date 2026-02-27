@@ -9,6 +9,9 @@ This repository currently includes Sprint 0 and Sprint 1:
 - PostgreSQL Docker setup
 - Backend auth/chat/session APIs
 - Frontend login/chat/session UI
+- Streaming responses (OpenAI + Anthropic + mock)
+- Disk-backed session persistence across backend restarts
+- Frontend and backend critical-path automated tests
 
 ## Prerequisites
 
@@ -78,7 +81,8 @@ Run these from repository root unless noted.
 ```bash
 bun run lint
 cd packages/backend && bun test
-cd ../frontend && bun run build
+cd ../frontend && bun run test
+bun run build
 cd ../..
 ```
 
@@ -122,17 +126,34 @@ curl -i -b /tmp/teacher_assist.cookie \
   http://localhost:3001/api/chat
 ```
 
+5. Real provider one-shot smoke check (streaming + log capture):
+
+```bash
+bun run smoke:providers
+```
+
+Optional env overrides:
+- `SMOKE_OPENAI_MODEL` (default: `gpt-5-nano-2025-08-07`)
+- `SMOKE_ANTHROPIC_MODEL` (default: `claude-haiku-4-5`)
+- `SMOKE_MAX_TOKENS` (default: `80`)
+
+Logs are written to:
+- `packages/backend/.data/smoke/providers-<timestamp>.json`
+
 ## Sprint 1 Verification Checklist
 
 - `bun install` completes without dependency errors
 - `bun run lint` exits with code `0`
 - `packages/backend` tests pass
+- `packages/frontend` tests pass
 - `packages/frontend` build passes
 - Backend starts on `localhost:3001`
 - Frontend starts on Vite default port and loads login screen
 - Login works with demo credentials
 - You can create/resume/delete sessions in the UI
 - Chat requests return assistant responses
+- Chat responses stream incrementally in the UI
+- Sessions persist after backend restart
 - PostgreSQL container is healthy via `docker ps`
 
 ## Database Migrations
@@ -154,4 +175,4 @@ A migration runner is not wired yet. For manual application, use your preferred 
 ## Current Limitations
 
 - No migration runner wired yet
-- Frontend automated tests are not added yet
+- Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)

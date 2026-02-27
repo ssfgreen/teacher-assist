@@ -46,6 +46,21 @@ function isMockModel(model: string): boolean {
   return model === "mock" || model.startsWith("mock-");
 }
 
+function openAiTokenLimitParam(
+  model: string,
+  maxTokens?: number,
+): Record<string, number> {
+  if (typeof maxTokens !== "number") {
+    return {};
+  }
+
+  if (model.startsWith("gpt-5")) {
+    return { max_completion_tokens: maxTokens };
+  }
+
+  return { max_tokens: maxTokens };
+}
+
 function chunkText(content: string): string[] {
   const parts = content.match(/\S+\s*/g);
   return parts ?? [content];
@@ -70,6 +85,7 @@ async function callOpenAI(
   model: string,
   messages: ChatMessage[],
   apiKey: string,
+  maxTokens?: number,
 ): Promise<ModelResponse> {
   const client = new OpenAI({ apiKey });
   const completion = await client.chat.completions.create({
@@ -78,6 +94,7 @@ async function callOpenAI(
       role: message.role,
       content: message.content,
     })),
+    ...openAiTokenLimitParam(model, maxTokens),
   });
 
   const content = completion.choices[0]?.message?.content ?? "";
@@ -110,6 +127,7 @@ async function streamOpenAI(
   messages: ChatMessage[],
   apiKey: string,
   onDelta: (delta: string) => void,
+  maxTokens?: number,
 ): Promise<ModelResponse> {
   const client = new OpenAI({ apiKey });
   const stream = await client.chat.completions.create({
@@ -119,6 +137,7 @@ async function streamOpenAI(
       content: message.content,
     })),
     stream: true,
+    ...openAiTokenLimitParam(model, maxTokens),
   });
 
   let content = "";
@@ -138,11 +157,12 @@ async function callAnthropic(
   model: string,
   messages: ChatMessage[],
   apiKey: string,
+  maxTokens = 1024,
 ): Promise<ModelResponse> {
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: maxTokens,
     messages: toInputMessages(messages).map((message) => ({
       role: message.role === "assistant" ? "assistant" : "user",
       content: message.content,
@@ -171,11 +191,114 @@ async function callAnthropic(
   };
 }
 
+async function streamAnthropic(
+  model: string,
+  messages: ChatMessage[],
+  apiKey: string,
+  onDelta: (delta: string) => void,
+  maxTokens = 1024,
+): Promise<ModelResponse> {
+  const client = new Anthropic({ apiKey });
+  const stream = (await client.messages.create({
+    model,
+    max_tokens: maxTokens,
+    stream: true,
+    messages: toInputMessages(messages).map((message) => ({
+      role: message.role === "assistant" ? "assistant" : "user",
+      content: message.content,
+    })),
+  })) as AsyncIterable<unknown>;
+
+  let content = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  for await (const event of stream) {
+    if (typeof event !== "object" || event === null) {
+      continue;
+    }
+
+    const record = event as Record<string, unknown>;
+    const eventType = record.type;
+
+    if (eventType === "message_start") {
+      const message =
+        typeof record.message === "object" && record.message !== null
+          ? (record.message as Record<string, unknown>)
+          : null;
+      const usage =
+        message && typeof message.usage === "object" && message.usage !== null
+          ? (message.usage as Record<string, unknown>)
+          : null;
+
+      inputTokens =
+        typeof usage?.input_tokens === "number"
+          ? usage.input_tokens
+          : inputTokens;
+      outputTokens =
+        typeof usage?.output_tokens === "number"
+          ? usage.output_tokens
+          : outputTokens;
+      continue;
+    }
+
+    if (eventType === "content_block_delta") {
+      const deltaPayload =
+        typeof record.delta === "object" && record.delta !== null
+          ? (record.delta as Record<string, unknown>)
+          : null;
+      const deltaType = deltaPayload?.type;
+      const deltaText =
+        typeof deltaPayload?.text === "string" ? deltaPayload.text : "";
+
+      if (deltaType !== "text_delta") {
+        continue;
+      }
+
+      const delta = deltaText;
+      if (delta) {
+        content += delta;
+        onDelta(delta);
+      }
+      continue;
+    }
+
+    if (eventType === "message_delta") {
+      const usage =
+        typeof record.usage === "object" && record.usage !== null
+          ? (record.usage as Record<string, unknown>)
+          : null;
+      outputTokens =
+        typeof usage?.output_tokens === "number"
+          ? usage.output_tokens
+          : outputTokens;
+    }
+  }
+
+  const usageFromEstimate = estimateUsage(messages, content);
+  const resolvedInput = inputTokens || usageFromEstimate.inputTokens;
+  const resolvedOutput = outputTokens || usageFromEstimate.outputTokens;
+  const resolvedTotal = resolvedInput + resolvedOutput;
+
+  return {
+    content,
+    toolCalls: [],
+    usage: {
+      inputTokens: resolvedInput,
+      outputTokens: resolvedOutput,
+      totalTokens: resolvedTotal,
+      estimatedCostUsd: Number((resolvedTotal * 0.000002).toFixed(6)),
+    },
+    stopReason: "stop",
+  };
+}
+
 export async function streamModel(
   provider: Provider,
   model: string,
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
+  maxTokens?: number,
 ): Promise<ModelResponse> {
   const latestUserMessage =
     [...messages].reverse().find((message) => message.role === "user")
@@ -192,22 +315,17 @@ export async function streamModel(
   const apiKey = resolveApiKey(provider);
 
   if (provider === "openai") {
-    return streamOpenAI(model, messages, apiKey, onDelta);
+    return streamOpenAI(model, messages, apiKey, onDelta, maxTokens);
   }
 
-  // Anthropic path currently falls back to non-streaming API call,
-  // then emits chunks for consistent SSE behaviour.
-  const response = await callAnthropic(model, messages, apiKey);
-  for (const chunk of chunkText(response.content)) {
-    onDelta(chunk);
-  }
-  return response;
+  return streamAnthropic(model, messages, apiKey, onDelta, maxTokens);
 }
 
 export async function callModel(
   provider: Provider,
   model: string,
   messages: ChatMessage[],
+  maxTokens?: number,
 ): Promise<ModelResponse> {
   const latestUserMessage =
     [...messages].reverse().find((message) => message.role === "user")
@@ -223,10 +341,10 @@ export async function callModel(
   const apiKey = resolveApiKey(provider);
 
   if (provider === "openai") {
-    return callOpenAI(model, messages, apiKey);
+    return callOpenAI(model, messages, apiKey, maxTokens);
   }
 
-  return callAnthropic(model, messages, apiKey);
+  return callAnthropic(model, messages, apiKey, maxTokens);
 }
 
 export function assertValidProvider(

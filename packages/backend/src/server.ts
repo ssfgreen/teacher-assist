@@ -159,6 +159,7 @@ export async function createHandler(request: Request): Promise<Response> {
         model: string;
         sessionId?: string;
         stream?: boolean;
+        maxTokens?: number;
       }>(request);
 
       assertValidProvider(body.provider);
@@ -209,6 +210,7 @@ export async function createHandler(request: Request): Promise<Response> {
                   (delta) => {
                     pushEvent("delta", { text: delta });
                   },
+                  body.maxTokens,
                 );
               } catch (error) {
                 if (error instanceof ModelConfigurationError) {
@@ -264,7 +266,12 @@ export async function createHandler(request: Request): Promise<Response> {
 
       let response: ModelResponse;
       try {
-        response = await callModel(provider, body.model, body.messages);
+        response = await callModel(
+          provider,
+          body.model,
+          body.messages,
+          body.maxTokens,
+        );
       } catch (error) {
         if (error instanceof ModelConfigurationError) {
           return json({ error: error.message }, 400);

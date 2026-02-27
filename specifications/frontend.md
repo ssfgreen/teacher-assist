@@ -121,11 +121,19 @@ App
 
 ### Tests
 
-- [ ] Auth flow: login → redirect → session created → logout → redirect to login
-- [ ] Chat flow: type message → send → loading indicator → response rendered
-- [ ] Session resume: click session → messages loaded → new message sent → appended
-- [ ] Model selector: change model → next message uses new model
-- [ ] Error handling: failed login shows error, failed chat shows inline error
+- [x] Auth flow: login → redirect → session created → logout → redirect to login
+- [x] Chat flow: type message → send → loading indicator → response rendered
+- [x] Session resume: click session → messages loaded → new message sent → appended
+- [x] Model selector: change model → next message uses new model
+- [x] Error handling: failed login shows error, failed chat shows inline error
+
+#### Sprint 1 Additions Implemented
+
+- [x] Streaming response rendering in chat (incremental assistant message updates via SSE).
+- [x] Enter/Shift+Enter hotkey behavior aligned to common LLM chat UX.
+- [x] Vite `/api` proxy to backend (`localhost:3001`) for local development.
+- [x] Explicit mock model options in selector alongside real provider models.
+- [x] Frontend critical-path automated tests with Vitest + React Testing Library.
 
 ---
 

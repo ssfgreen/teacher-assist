@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --env-file ../../.env src/index.ts",
+    "smoke:providers": "bun run --env-file ../../.env src/smoke-providers.ts",
     "test": "bun test",
     "lint": "biome check ."
   },
