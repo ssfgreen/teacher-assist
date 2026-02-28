@@ -4,6 +4,7 @@ import {
   deleteWorkspaceFile,
   listWorkspace,
   readWorkspaceFile,
+  renameWorkspacePath,
   seedWorkspace,
   writeWorkspaceFile,
 } from "../api/workspace";
@@ -30,10 +31,30 @@ interface WorkspaceState {
   saveOpenFile: () => Promise<void>;
   createFile: (path: string, content?: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
+  renamePath: (fromPath: string, toPath: string) => Promise<void>;
 }
 
 function workspaceError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function mapRenamedPath(
+  path: string,
+  fromPath: string,
+  toPath: string,
+): string {
+  if (path === fromPath) {
+    return toPath;
+  }
+
+  const prefix = fromPath.endsWith("/") ? fromPath : `${fromPath}/`;
+  if (!path.startsWith(prefix)) {
+    return path;
+  }
+
+  const suffix = path.slice(prefix.length);
+  const toPrefix = toPath.endsWith("/") ? toPath : `${toPath}/`;
+  return `${toPrefix}${suffix}`;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -195,6 +216,35 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({
         loading: false,
         error: workspaceError(error, "Failed to delete workspace file"),
+      });
+    }
+  },
+
+  renamePath: async (fromPath, toPath) => {
+    set({ loading: true, error: null });
+    try {
+      await renameWorkspacePath(fromPath, toPath);
+      const data = await listWorkspace();
+      const currentOpenPath = get().openFilePath;
+      const nextOpenPath = currentOpenPath
+        ? mapRenamedPath(currentOpenPath, fromPath, toPath)
+        : null;
+      const nextSelectedContent = nextOpenPath
+        ? (await readWorkspaceFile(nextOpenPath)).content
+        : get().openFileContent;
+
+      set({
+        tree: data.tree,
+        classRefs: data.classRefs,
+        openFilePath: nextOpenPath,
+        openFileContent: nextOpenPath ? nextSelectedContent : "",
+        dirty: false,
+        loading: false,
+      });
+    } catch (error) {
+      set({
+        loading: false,
+        error: workspaceError(error, "Failed to rename workspace path"),
       });
     }
   },

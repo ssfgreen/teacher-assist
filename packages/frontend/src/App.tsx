@@ -96,13 +96,67 @@ function collectFiles(nodes: WorkspaceNode[]): string[] {
   return files;
 }
 
+function findNodeByPath(
+  nodes: WorkspaceNode[],
+  path: string,
+): WorkspaceNode | null {
+  for (const node of nodes) {
+    if (node.path === path) {
+      return node;
+    }
+    if (node.type === "directory") {
+      const found = findNodeByPath(node.children ?? [], path);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
+function parentDirectory(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) {
+    return "";
+  }
+  return parts.slice(0, -1).join("/");
+}
+
+function joinPath(base: string, suffix: string): string {
+  if (!base) {
+    return suffix;
+  }
+  return `${base}/${suffix}`;
+}
+
+function resolveRenameTargetPath(
+  selectedNode: WorkspaceNode,
+  userInput: string,
+): string {
+  const normalizedInput = userInput
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+
+  if (!normalizedInput) {
+    return selectedNode.path;
+  }
+
+  if (normalizedInput.includes("/")) {
+    return normalizedInput;
+  }
+
+  const parent = parentDirectory(selectedNode.path);
+  return joinPath(parent, normalizedInput);
+}
+
 function displayContextPath(path: string): string {
   if (path === "soul.md") {
     return "assistant identity";
   }
 
-  if (path.startsWith("classes/") && path.endsWith("/PROFILE.md")) {
-    const classRef = path.replace("classes/", "").replace("/PROFILE.md", "");
+  if (path.startsWith("classes/") && path.endsWith("/CLASS.md")) {
+    const classRef = path.replace("classes/", "").replace("/CLASS.md", "");
     return `${classRef} class profile`;
   }
 
@@ -165,6 +219,7 @@ export default function App() {
   const saveWorkspaceFile = useWorkspaceStore((state) => state.saveOpenFile);
   const createWorkspaceFile = useWorkspaceStore((state) => state.createFile);
   const removeWorkspaceFile = useWorkspaceStore((state) => state.deleteFile);
+  const renameWorkspacePath = useWorkspaceStore((state) => state.renamePath);
   const closeWorkspaceFile = useWorkspaceStore((state) => state.closeFile);
 
   const [messageInput, setMessageInput] = useState("");
@@ -174,6 +229,9 @@ export default function App() {
   const [selectedClassRef, setSelectedClassRef] = useState("");
   const [contextExpanded, setContextExpanded] = useState(false);
   const [lastContextPaths, setLastContextPaths] = useState<string[]>([]);
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     void initialiseAuth();
@@ -207,6 +265,12 @@ export default function App() {
     () => collectFiles(workspaceTree),
     [workspaceTree],
   );
+  const selectedWorkspaceNode = useMemo(() => {
+    if (!selectedWorkspacePath) {
+      return null;
+    }
+    return findNodeByPath(workspaceTree, selectedWorkspacePath);
+  }, [workspaceTree, selectedWorkspacePath]);
 
   const sendMessage = async () => {
     const content = messageInput.trim();
@@ -365,17 +429,102 @@ export default function App() {
                   className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
                   type="button"
                   onClick={() => {
-                    const path = window.prompt(
-                      "New file path (e.g. classes/3C/PROFILE.md)",
-                      "classes/",
-                    );
-                    if (!path) {
+                    if (!selectedWorkspaceNode) {
                       return;
                     }
-                    void createWorkspaceFile(path);
+
+                    const suggestedName = selectedWorkspaceNode.path
+                      .split("/")
+                      .filter(Boolean)
+                      .at(-1);
+                    const nextPath = window.prompt(
+                      "Rename to (name or path)",
+                      suggestedName ?? selectedWorkspaceNode.path,
+                    );
+                    if (!nextPath) {
+                      return;
+                    }
+
+                    const resolvedPath = resolveRenameTargetPath(
+                      selectedWorkspaceNode,
+                      nextPath,
+                    );
+                    void renameWorkspacePath(
+                      selectedWorkspaceNode.path,
+                      resolvedPath,
+                    );
+                    setSelectedWorkspacePath(resolvedPath);
+                  }}
+                  disabled={!selectedWorkspaceNode}
+                >
+                  Rename
+                </button>
+                <button
+                  className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
+                  type="button"
+                  onClick={() => {
+                    const folderName = window.prompt(
+                      "Folder name (or relative path)",
+                      "new-folder",
+                    );
+                    if (!folderName) {
+                      return;
+                    }
+
+                    const normalizedFolder = folderName
+                      .trim()
+                      .replace(/^\/+/, "")
+                      .replace(/\/+$/, "");
+                    if (!normalizedFolder) {
+                      return;
+                    }
+
+                    const baseDir =
+                      selectedWorkspaceNode?.type === "directory"
+                        ? selectedWorkspaceNode.path
+                        : selectedWorkspaceNode
+                          ? parentDirectory(selectedWorkspaceNode.path)
+                          : "";
+                    const folderPath = joinPath(baseDir, normalizedFolder);
+                    void createWorkspaceFile(
+                      `${folderPath}/README.md`,
+                      "# Folder Notes\n\n",
+                    );
                   }}
                 >
-                  New file
+                  New Folder
+                </button>
+                <button
+                  className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
+                  type="button"
+                  onClick={() => {
+                    const fileName = window.prompt(
+                      "File name (or relative path)",
+                      "new-file.md",
+                    );
+                    if (!fileName) {
+                      return;
+                    }
+
+                    const normalizedFile = fileName
+                      .trim()
+                      .replace(/^\/+/, "")
+                      .replace(/\/+$/, "");
+                    if (!normalizedFile) {
+                      return;
+                    }
+
+                    const baseDir =
+                      selectedWorkspaceNode?.type === "directory"
+                        ? selectedWorkspaceNode.path
+                        : selectedWorkspaceNode
+                          ? parentDirectory(selectedWorkspaceNode.path)
+                          : "";
+                    const filePath = joinPath(baseDir, normalizedFile);
+                    void createWorkspaceFile(filePath, "# New file\n");
+                  }}
+                >
+                  New File
                 </button>
               </div>
             </div>
@@ -388,6 +537,8 @@ export default function App() {
                   activePath={workspaceFilePath}
                   expandedFolders={expandedFolders}
                   onToggleFolder={toggleFolder}
+                  selectedPath={selectedWorkspacePath}
+                  onSelectPath={setSelectedWorkspacePath}
                   onOpenFile={openWorkspaceFile}
                 />
               ))}
@@ -683,6 +834,8 @@ interface WorkspaceTreeItemProps {
   activePath: string | null;
   expandedFolders: Record<string, boolean>;
   onToggleFolder: (path: string) => void;
+  selectedPath: string | null;
+  onSelectPath: (path: string) => void;
   onOpenFile: (path: string) => Promise<void>;
 }
 
@@ -692,6 +845,8 @@ function WorkspaceTreeItem({
   activePath,
   expandedFolders,
   onToggleFolder,
+  selectedPath,
+  onSelectPath,
   onOpenFile,
 }: WorkspaceTreeItemProps) {
   const indent = { paddingLeft: `${depth * 12}px` };
@@ -701,10 +856,13 @@ function WorkspaceTreeItem({
     return (
       <div>
         <button
-          className="w-full text-left text-xs font-medium"
+          className={`w-full rounded px-1 py-0.5 text-left text-xs font-medium ${selectedPath === node.path ? "bg-paper-50" : ""}`}
           style={indent}
           type="button"
-          onClick={() => onToggleFolder(node.path)}
+          onClick={() => {
+            onSelectPath(node.path);
+            onToggleFolder(node.path);
+          }}
         >
           {expanded ? "▾" : "▸"} {node.name}
         </button>
@@ -717,6 +875,8 @@ function WorkspaceTreeItem({
                 activePath={activePath}
                 expandedFolders={expandedFolders}
                 onToggleFolder={onToggleFolder}
+                selectedPath={selectedPath}
+                onSelectPath={onSelectPath}
                 onOpenFile={onOpenFile}
               />
             ))
@@ -729,10 +889,13 @@ function WorkspaceTreeItem({
 
   return (
     <button
-      className={`w-full rounded px-1 py-0.5 text-left text-xs ${activePath === node.path ? "bg-paper-50" : ""}`}
+      className={`w-full rounded px-1 py-0.5 text-left text-xs ${activePath === node.path || selectedPath === node.path ? "bg-paper-50" : ""}`}
       style={indent}
       type="button"
-      onClick={() => void onOpenFile(node.path)}
+      onClick={() => {
+        onSelectPath(node.path);
+        void onOpenFile(node.path);
+      }}
     >
       {label}
     </button>

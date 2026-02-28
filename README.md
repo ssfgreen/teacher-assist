@@ -38,7 +38,13 @@ bun install
 docker compose up -d
 ```
 
-3. Create a root `.env` file with at least:
+3. (Optional) Create a root `.env` file to override database/provider settings. If omitted, backend defaults to:
+
+```bash
+DATABASE_URL=postgres://teacher_assist:teacher_assist@localhost:5432/teacher_assist
+```
+
+Example `.env`:
 
 ```bash
 DATABASE_URL=postgres://teacher_assist:teacher_assist@localhost:5432/teacher_assist
@@ -150,7 +156,7 @@ curl -i -b /tmp/teacher_assist.cookie \
   -H "Content-Type: application/json" \
   -X PUT \
   -d '{"content":"# Class 3B\n- Subject: Computing Science"}' \
-  http://localhost:3001/api/workspace/classes/3B.md
+  http://localhost:3001/api/workspace/classes/3B/CLASS.md
 ```
 
 5. Real provider one-shot smoke check (streaming + log capture):

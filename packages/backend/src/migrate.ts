@@ -2,12 +2,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { SQL } from "bun";
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error(
-    "DATABASE_URL is required for migrations. Set it in .env before running `bun run migrate`.",
-  );
-}
+import { resolveDatabaseUrl } from "./config";
+
+const databaseUrl = resolveDatabaseUrl();
 
 const migrationsDir = resolve(import.meta.dir, "../db/migrations");
 const migrationFiles = readdirSync(migrationsDir)

@@ -1,22 +1,10 @@
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import type { Dirent } from "node:fs";
-import { join, normalize, resolve } from "node:path";
+import { normalize } from "node:path";
 import { SQL } from "bun";
 
+import { resolveDatabaseUrl } from "./config";
 import type { ChatMessage } from "./types";
 
-const WORKSPACE_ROOT = resolve(process.cwd(), "../../workspace");
 const CLASS_REF_PATTERN = /\b([1-6][A-Za-z])\b/g;
-const UUID_DIR_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const DEFAULT_SOUL = `# Assistant Identity
 
@@ -57,7 +45,7 @@ const DEFAULT_CLASS_STUB = `# Class Profile
 - Prior learning:
 `;
 
-const CLASS_PROFILE_FILENAME = "PROFILE.md";
+const CLASS_PROFILE_FILENAME = "CLASS.md";
 
 const DEFAULT_WORKSPACE_FILES: Array<{ path: string; content: string }> = [
   { path: "soul.md", content: DEFAULT_SOUL },
@@ -84,30 +72,7 @@ export interface LoadedWorkspaceContext {
 }
 
 const WORKSPACE_DB_CONFIG_ERROR =
-  "Workspace storage requires PostgreSQL. Set DATABASE_URL and run `cd packages/backend && bun run migrate`.";
-
-function ensureWorkspaceRoot(): void {
-  mkdirSync(WORKSPACE_ROOT, { recursive: true });
-}
-
-function teacherRoot(teacherId: string): string {
-  return join(WORKSPACE_ROOT, teacherId);
-}
-
-function ensureTeacherWorkspaceRoot(teacherId: string): string {
-  ensureWorkspaceRoot();
-  const root = teacherRoot(teacherId);
-  mkdirSync(root, { recursive: true });
-  return root;
-}
-
-function writeIfMissing(path: string, content: string): void {
-  try {
-    statSync(path);
-  } catch {
-    writeFileSync(path, content, "utf8");
-  }
-}
+  "Workspace storage requires PostgreSQL. Ensure Postgres is running (`docker compose up -d`) and run `cd packages/backend && bun run migrate`.";
 
 function normalizeRelativePath(path: string): string {
   const normalized = normalize(path).replaceAll("\\", "/").replace(/^\/+/, "");
@@ -120,56 +85,6 @@ function normalizeRelativePath(path: string): string {
   }
 
   return normalized;
-}
-
-function resolveWorkspacePath(teacherId: string, relativePath: string): string {
-  const safeRelative = normalizeRelativePath(relativePath);
-  const root = ensureTeacherWorkspaceRoot(teacherId);
-  const absolutePath = resolve(root, safeRelative);
-
-  if (!absolutePath.startsWith(root)) {
-    throw new Error("Invalid workspace path");
-  }
-
-  return absolutePath;
-}
-
-function readDirectoryTree(dir: string, relative = ""): WorkspaceNode[] {
-  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => {
-    if (a.isDirectory() && !b.isDirectory()) {
-      return -1;
-    }
-    if (!a.isDirectory() && b.isDirectory()) {
-      return 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
-
-  return entries.map((entry) => {
-    const path = relative ? `${relative}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      return {
-        name: entry.name,
-        path,
-        type: "directory" as const,
-        children: readDirectoryTree(join(dir, entry.name), path),
-      };
-    }
-
-    return {
-      name: entry.name,
-      path,
-      type: "file" as const,
-    };
-  });
-}
-
-function readFileOrDefault(path: string, fallback: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return fallback;
-  }
 }
 
 function parseClassRef(value: string): string | null {
@@ -204,21 +119,9 @@ function classProfilePath(classRef: string): string {
   return `classes/${classRef}/${CLASS_PROFILE_FILENAME}`;
 }
 
-function readDirectoryEntries(path: string): Dirent[] {
-  try {
-    return readdirSync(path, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-}
-
 async function getSql(): Promise<SQL | null> {
-  if (!process.env.DATABASE_URL) {
-    return null;
-  }
-
   if (!sqlClient) {
-    sqlClient = new SQL(process.env.DATABASE_URL);
+    sqlClient = new SQL(resolveDatabaseUrl());
   }
 
   try {
@@ -321,6 +224,10 @@ async function deleteWorkspaceFilePostgres(
     DELETE FROM workspace_files
     WHERE teacher_id = ${teacherId} AND path = ${relativePath}
   `;
+}
+
+function normalizeDirectoryPrefix(path: string): string {
+  return path.endsWith("/") ? path : `${path}/`;
 }
 
 function buildTreeFromPaths(paths: string[]): WorkspaceNode[] {
@@ -441,6 +348,88 @@ export async function deleteWorkspaceFile(
   await deleteWorkspaceFilePostgres(teacherId, normalized);
 }
 
+export async function renameWorkspacePath(params: {
+  teacherId: string;
+  fromPath: string;
+  toPath: string;
+}): Promise<{ fromPath: string; toPath: string; renamedCount: number }> {
+  await seedWorkspaceForTeacher(params.teacherId);
+  const fromPath = normalizeRelativePath(params.fromPath);
+  const toPath = normalizeRelativePath(params.toPath);
+
+  if (fromPath === toPath) {
+    return { fromPath, toPath, renamedCount: 0 };
+  }
+
+  if (fromPath === "soul.md" || toPath === "soul.md") {
+    throw new Error("Cannot rename soul.md");
+  }
+
+  const allPaths = await listWorkspacePathsPostgres(params.teacherId);
+  const allPathSet = new Set(allPaths);
+
+  if (allPathSet.has(fromPath)) {
+    if (allPathSet.has(toPath)) {
+      throw new Error("Target path already exists");
+    }
+
+    const content = await readWorkspaceFilePostgres(params.teacherId, fromPath);
+    if (content === null) {
+      throw new Error("Workspace path not found");
+    }
+
+    await writeWorkspaceFilePostgres(params.teacherId, toPath, content);
+    await deleteWorkspaceFilePostgres(params.teacherId, fromPath);
+    return { fromPath, toPath, renamedCount: 1 };
+  }
+
+  const fromPrefix = normalizeDirectoryPrefix(fromPath);
+  const folderPaths = allPaths.filter((path) => path.startsWith(fromPrefix));
+  if (folderPaths.length === 0) {
+    throw new Error("Workspace path not found");
+  }
+
+  const toPrefix = normalizeDirectoryPrefix(toPath);
+  if (toPrefix.startsWith(fromPrefix)) {
+    throw new Error("Cannot move a folder into itself");
+  }
+
+  const renamePlan = folderPaths.map((oldPath) => {
+    const suffix = oldPath.slice(fromPrefix.length);
+    return {
+      oldPath,
+      newPath: `${toPrefix}${suffix}`,
+    };
+  });
+
+  for (const item of renamePlan) {
+    if (allPathSet.has(item.newPath) && !folderPaths.includes(item.newPath)) {
+      throw new Error("Target path already exists");
+    }
+  }
+
+  for (const item of renamePlan) {
+    const content = await readWorkspaceFilePostgres(
+      params.teacherId,
+      item.oldPath,
+    );
+    if (content === null) {
+      throw new Error("Workspace path not found");
+    }
+    await writeWorkspaceFilePostgres(params.teacherId, item.newPath, content);
+  }
+
+  for (const item of renamePlan) {
+    await deleteWorkspaceFilePostgres(params.teacherId, item.oldPath);
+  }
+
+  return {
+    fromPath,
+    toPath,
+    renamedCount: renamePlan.length,
+  };
+}
+
 export function extractClassRefFromMessages(
   messages: ChatMessage[],
 ): string | null {
@@ -463,7 +452,7 @@ export async function listClassRefs(teacherId: string): Promise<string[]> {
   const dbPaths = await listWorkspacePathsPostgres(teacherId);
   const refs = new Set<string>();
   for (const path of dbPaths) {
-    const match = path.match(/^classes\/([^/]+)\/PROFILE\.md$/i);
+    const match = path.match(/^classes\/([^/]+)\/CLASS\.md$/i);
     if (match?.[1]) {
       refs.add(match[1].toUpperCase());
     }
@@ -579,25 +568,4 @@ export async function resetTeacherWorkspaceForTests(
       WHERE teacher_id = ${teacherId}
     `;
   }
-
-  const root = teacherRoot(teacherId);
-  rmSync(root, { recursive: true, force: true });
-}
-
-export function cleanupWorkspaceUuidDirectoriesForTests(): void {
-  ensureWorkspaceRoot();
-  const entries = readdirSync(WORKSPACE_ROOT, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    if (!UUID_DIR_PATTERN.test(entry.name)) {
-      continue;
-    }
-    rmSync(join(WORKSPACE_ROOT, entry.name), { recursive: true, force: true });
-  }
-}
-
-export function getWorkspaceRootForTests(): string {
-  return WORKSPACE_ROOT;
 }

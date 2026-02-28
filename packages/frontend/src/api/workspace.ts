@@ -35,3 +35,23 @@ export async function deleteWorkspaceFile(path: string): Promise<void> {
     method: "DELETE",
   });
 }
+
+export async function renameWorkspacePath(
+  fromPath: string,
+  toPath: string,
+): Promise<{
+  ok: boolean;
+  fromPath: string;
+  toPath: string;
+  renamedCount: number;
+}> {
+  return apiFetch<{
+    ok: boolean;
+    fromPath: string;
+    toPath: string;
+    renamedCount: number;
+  }>("/api/workspace/rename", {
+    method: "POST",
+    body: JSON.stringify({ fromPath, toPath }),
+  });
+}

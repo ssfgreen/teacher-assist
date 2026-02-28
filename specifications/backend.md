@@ -127,6 +127,7 @@ DELETE /api/sessions/:id
 - [x] Workspace storage in PostgreSQL (`workspace_files`) keyed per teacher
 - [x] Non-destructive workspace seeding with defaults (`soul.md`, `teacher.md`, `pedagogy.md`, `curriculum/`, `classes/`)
 - [x] Workspace CRUD API (`GET/PUT/DELETE /api/workspace/*path`, `GET /api/workspace`, `POST /api/workspace/seed`)
+- [x] Workspace rename API (`POST /api/workspace/rename`) for file/folder path moves
 - [x] `soul.md` delete protection
 - [x] Class reference extraction from user messages (`3B` pattern) and optional `classRef` request override
 - [x] System prompt assembly using XML-tagged sections in defined order
@@ -142,11 +143,12 @@ DELETE /api/sessions/:id
 
 - Workspace files stored in PostgreSQL under `workspace_files` (`teacher_id`, `path`, `content`)
 - Seed workspace templates on first login: `soul.md`, `teacher.md`, `pedagogy.md`, `curriculum/` (empty stubs), `classes/` (empty stubs)
-- Class profiles are stored as `classes/{classRef}/PROFILE.md` (e.g. `classes/3B/PROFILE.md`)
+- Class profiles are stored as `classes/{classRef}/CLASS.md` (e.g. `classes/3B/CLASS.md`)
 - `GET /api/workspace` — list workspace file tree for current teacher
 - `GET /api/workspace/*path` — read file content
 - `PUT /api/workspace/*path` — create or update file content
 - `DELETE /api/workspace/*path` — delete file (with safeguards: cannot delete `soul.md`)
+- `POST /api/workspace/rename` — rename/move a file or folder subtree (`{ fromPath, toPath }`)
 - `POST /api/workspace/seed` — re-seed defaults (non-destructive, only creates missing files)
 
 #### Workspace Loader (`workspace.ts`)
@@ -194,6 +196,7 @@ GET    /api/workspace
 GET    /api/workspace/*path
 PUT    /api/workspace/*path
 DELETE /api/workspace/*path
+POST   /api/workspace/rename
 POST   /api/workspace/seed
 ```
 

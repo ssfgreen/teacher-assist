@@ -6,7 +6,6 @@ import bcrypt from "bcrypt";
 import { resetAuthSeedForTests } from "../src/auth";
 import { createHandler } from "../src/server";
 import { createAuthToken, resetStores, upsertTeacher } from "../src/store";
-import { cleanupWorkspaceUuidDirectoriesForTests } from "../src/workspace";
 
 const baseUrl = "http://localhost";
 
@@ -18,13 +17,11 @@ describe("server integration", () => {
   beforeEach(() => {
     resetStores();
     resetAuthSeedForTests();
-    cleanupWorkspaceUuidDirectoriesForTests();
   });
 
   afterEach(() => {
     resetStores();
     resetAuthSeedForTests();
-    cleanupWorkspaceUuidDirectoriesForTests();
   });
 
   it("requires auth for protected endpoints", async () => {
@@ -384,7 +381,7 @@ describe("server integration", () => {
     expect(treeBody.tree.length > 0).toBe(true);
 
     const writeClassResponse = await request(
-      "/api/workspace/classes/3B/PROFILE.md",
+      "/api/workspace/classes/3B/CLASS.md",
       {
         method: "PUT",
         headers: {
@@ -414,7 +411,7 @@ describe("server integration", () => {
     expect(writeCurriculumResponse.status).toBe(200);
 
     const readClassResponse = await request(
-      "/api/workspace/classes/3B/PROFILE.md",
+      "/api/workspace/classes/3B/CLASS.md",
       {
         headers: { cookie },
       },
@@ -445,11 +442,11 @@ describe("server integration", () => {
     };
     expect(chatBody.workspaceContextLoaded.includes("soul.md")).toBe(true);
     expect(
-      chatBody.workspaceContextLoaded.includes("classes/3B/PROFILE.md"),
+      chatBody.workspaceContextLoaded.includes("classes/3B/CLASS.md"),
     ).toBe(true);
 
     const deleteClassResponse = await request(
-      "/api/workspace/classes/3B/PROFILE.md",
+      "/api/workspace/classes/3B/CLASS.md",
       {
         method: "DELETE",
         headers: { cookie },

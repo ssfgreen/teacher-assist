@@ -99,11 +99,23 @@ beforeEach(() => {
             type: "directory",
             children: [
               {
-                name: "PROFILE.md",
-                path: "classes/3B/PROFILE.md",
+                name: "CLASS.md",
+                path: "classes/3B/CLASS.md",
                 type: "file",
               },
             ],
+          },
+        ],
+      },
+      {
+        name: "curriculum",
+        path: "curriculum",
+        type: "directory",
+        children: [
+          {
+            name: "README.md",
+            path: "curriculum/README.md",
+            type: "file",
           },
         ],
       },
@@ -120,6 +132,12 @@ beforeEach(() => {
     path: "soul.md",
   });
   vi.mocked(workspaceApi.deleteWorkspaceFile).mockResolvedValue();
+  vi.mocked(workspaceApi.renameWorkspacePath).mockResolvedValue({
+    ok: true,
+    fromPath: "classes/3B/CLASS.md",
+    toPath: "classes/3B/CLASS-RENAMED.md",
+    renamedCount: 1,
+  });
 
   vi.mocked(chatApi.sendChatStream).mockImplementation(
     async (_params, onDelta) => {
@@ -127,7 +145,7 @@ beforeEach(() => {
       onDelta("world");
       return {
         sessionId: "s1",
-        workspaceContextLoaded: ["soul.md", "classes/3B/PROFILE.md"],
+        workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
         response: {
           content: "Hello world",
           toolCalls: [],
@@ -398,5 +416,76 @@ describe("App critical path", () => {
 
     await screen.findByPlaceholderText("Type your message...");
     await screen.findByText("Loaded session response");
+  });
+
+  it("creates a file inside the selected folder", async () => {
+    const user = userEvent.setup();
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("3C/CLASS.md");
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    await user.click(screen.getByRole("button", { name: /classes/i }));
+    await user.click(screen.getByRole("button", { name: "New File" }));
+
+    await waitFor(() => {
+      expect(workspaceApi.writeWorkspaceFile).toHaveBeenCalledWith(
+        "classes/3C/CLASS.md",
+        expect.stringContaining("# New file"),
+      );
+    });
+
+    promptSpy.mockRestore();
+  });
+
+  it("creates a folder inside the selected folder", async () => {
+    const user = userEvent.setup();
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("cfe");
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    await user.click(screen.getByRole("button", { name: /curriculum/i }));
+    await user.click(screen.getByRole("button", { name: "New Folder" }));
+
+    await waitFor(() => {
+      expect(workspaceApi.writeWorkspaceFile).toHaveBeenCalledWith(
+        "curriculum/cfe/README.md",
+        expect.stringContaining("# Folder Notes"),
+      );
+    });
+
+    promptSpy.mockRestore();
+  });
+
+  it("renames the selected workspace item", async () => {
+    const user = userEvent.setup();
+    const promptSpy = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("CLASS-RENAMED.md");
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    await user.click(screen.getByRole("button", { name: "CLASS.md" }));
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+
+    await waitFor(() => {
+      expect(workspaceApi.renameWorkspacePath).toHaveBeenCalledWith(
+        "classes/3B/CLASS.md",
+        "classes/3B/CLASS-RENAMED.md",
+      );
+    });
+
+    promptSpy.mockRestore();
   });
 });

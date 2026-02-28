@@ -46,14 +46,14 @@ describe("workspace storage", () => {
     await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
-    await writeWorkspaceFile(teacherId, "classes/3B/PROFILE.md", "# Class 3B");
-    expect(
-      await readWorkspaceFile(teacherId, "classes/3B/PROFILE.md"),
-    ).toContain("Class 3B");
+    await writeWorkspaceFile(teacherId, "classes/3B/CLASS.md", "# Class 3B");
+    expect(await readWorkspaceFile(teacherId, "classes/3B/CLASS.md")).toContain(
+      "Class 3B",
+    );
 
-    await deleteWorkspaceFile(teacherId, "classes/3B/PROFILE.md");
+    await deleteWorkspaceFile(teacherId, "classes/3B/CLASS.md");
     await expect(
-      readWorkspaceFile(teacherId, "classes/3B/PROFILE.md"),
+      readWorkspaceFile(teacherId, "classes/3B/CLASS.md"),
     ).rejects.toThrow();
 
     await expect(deleteWorkspaceFile(teacherId, "soul.md")).rejects.toThrow(
@@ -85,7 +85,7 @@ describe("workspace storage", () => {
     await seedWorkspaceForTeacher(teacherId);
     await writeWorkspaceFile(
       teacherId,
-      "classes/3B/PROFILE.md",
+      "classes/3B/CLASS.md",
       "# Class 3B\nSubject: Computing Science",
     );
     await writeWorkspaceFile(
@@ -100,7 +100,7 @@ describe("workspace storage", () => {
     });
 
     expect(context.loadedPaths.includes("soul.md")).toBe(true);
-    expect(context.loadedPaths.includes("classes/3B/PROFILE.md")).toBe(true);
+    expect(context.loadedPaths.includes("classes/3B/CLASS.md")).toBe(true);
     expect(
       context.loadedPaths.includes("curriculum/computing-science.md"),
     ).toBe(true);

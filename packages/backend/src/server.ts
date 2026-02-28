@@ -23,14 +23,34 @@ import {
 } from "./store";
 import type { ChatMessage, ModelResponse, Provider } from "./types";
 import {
+  type LoadedWorkspaceContext,
   deleteWorkspaceFile,
   listClassRefs,
   listWorkspaceTree,
   loadWorkspaceContext,
   readWorkspaceFile,
+  renameWorkspacePath,
   seedWorkspaceForTeacher,
   writeWorkspaceFile,
 } from "./workspace";
+
+function isWorkspaceStorageErrorMessage(message: string): boolean {
+  return (
+    message.includes("Workspace storage requires PostgreSQL") ||
+    message.includes("workspace_files table is missing")
+  );
+}
+
+function workspaceFailureResponse(error: unknown): Response {
+  const message =
+    error instanceof Error ? error.message : "Workspace storage unavailable";
+
+  if (isWorkspaceStorageErrorMessage(message)) {
+    return json({ error: message }, 503);
+  }
+
+  return json({ error: message }, 400);
+}
 
 function json(data: unknown, status = 200, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(data), {
@@ -141,7 +161,11 @@ export async function createHandler(request: Request): Promise<Response> {
     if (!result) {
       return json({ error: "Invalid credentials" }, 401);
     }
-    await seedWorkspaceForTeacher(result.teacher.id);
+    try {
+      await seedWorkspaceForTeacher(result.teacher.id);
+    } catch (error) {
+      return workspaceFailureResponse(error);
+    }
 
     return json(
       {
@@ -168,24 +192,66 @@ export async function createHandler(request: Request): Promise<Response> {
     }
 
     if (pathname === "/api/auth/me" && request.method === "GET") {
-      await seedWorkspaceForTeacher(teacher.id);
+      try {
+        await seedWorkspaceForTeacher(teacher.id);
+      } catch (error) {
+        return workspaceFailureResponse(error);
+      }
       return json(teacher);
     }
 
     if (pathname === "/api/workspace" && request.method === "GET") {
-      const tree = await listWorkspaceTree(teacher.id);
-      const classRefs = await listClassRefs(teacher.id);
-      return json({
-        tree,
-        classRefs,
-      });
+      try {
+        const tree = await listWorkspaceTree(teacher.id);
+        const classRefs = await listClassRefs(teacher.id);
+        return json({
+          tree,
+          classRefs,
+        });
+      } catch (error) {
+        return workspaceFailureResponse(error);
+      }
     }
 
     if (pathname === "/api/workspace/seed" && request.method === "POST") {
-      await seedWorkspaceForTeacher(teacher.id);
+      try {
+        await seedWorkspaceForTeacher(teacher.id);
+      } catch (error) {
+        return workspaceFailureResponse(error);
+      }
       return json({
         ok: true,
       });
+    }
+
+    if (pathname === "/api/workspace/rename" && request.method === "POST") {
+      const body = await parseJson<{ fromPath: string; toPath: string }>(
+        request,
+      );
+      try {
+        const result = await renameWorkspacePath({
+          teacherId: teacher.id,
+          fromPath: body.fromPath,
+          toPath: body.toPath,
+        });
+        return json({
+          ok: true,
+          ...result,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Invalid workspace path";
+        if (isWorkspaceStorageErrorMessage(message)) {
+          return json({ error: message }, 503);
+        }
+        const status =
+          message === "Workspace path not found"
+            ? 404
+            : message.includes("already exists")
+              ? 409
+              : 400;
+        return json({ error: message }, status);
+      }
     }
 
     if (pathname.startsWith("/api/workspace/") && request.method === "GET") {
@@ -197,9 +263,7 @@ export async function createHandler(request: Request): Promise<Response> {
           content,
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Invalid workspace path";
-        return json({ error: message }, 400);
+        return workspaceFailureResponse(error);
       }
     }
 
@@ -213,9 +277,7 @@ export async function createHandler(request: Request): Promise<Response> {
           path: relativePath,
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Invalid workspace path";
-        return json({ error: message }, 400);
+        return workspaceFailureResponse(error);
       }
     }
 
@@ -227,6 +289,9 @@ export async function createHandler(request: Request): Promise<Response> {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Invalid workspace path";
+        if (isWorkspaceStorageErrorMessage(message)) {
+          return json({ error: message }, 503);
+        }
         const status = message === "Cannot delete soul.md" ? 400 : 404;
         return json({ error: message }, status);
       }
@@ -252,11 +317,16 @@ export async function createHandler(request: Request): Promise<Response> {
 
       assertValidProvider(body.provider);
       const provider = body.provider as Provider;
-      const workspaceContext = await loadWorkspaceContext({
-        teacherId: teacher.id,
-        messages: body.messages,
-        classRef: body.classRef,
-      });
+      let workspaceContext: LoadedWorkspaceContext;
+      try {
+        workspaceContext = await loadWorkspaceContext({
+          teacherId: teacher.id,
+          messages: body.messages,
+          classRef: body.classRef,
+        });
+      } catch (error) {
+        return workspaceFailureResponse(error);
+      }
       const { systemPrompt, estimatedTokens } = assembleSystemPrompt({
         assistantIdentity: workspaceContext.assistantIdentity,
         agentInstructions: DEFAULT_AGENT_INSTRUCTIONS,

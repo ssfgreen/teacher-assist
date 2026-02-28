@@ -149,6 +149,8 @@ App
 - [x] Debounced auto-save with manual save control
 - [x] File creation and deletion (with `soul.md` deletion blocked)
 - [x] Workspace seed action (`POST /api/workspace/seed`)
+- [x] Folder-context "New Folder" and "New File" quick actions for filesystem-like workspace editing
+- [x] Rename action for selected workspace files/folders
 - [x] Class selector populated from workspace classes and sent as `classRef`
 - [x] Context indicator for `workspaceContextLoaded` metadata on chat responses
 - [x] Frontend tests for workspace read flow, classRef propagation, and context indicator rendering
@@ -193,7 +195,7 @@ App
 
 #### Updated Chat Input
 
-- Optional class reference selector: dropdown or tag input to specify which class the prompt is about (e.g. "3B"). Populates from workspace `classes/{classRef}/PROFILE.md` directories.
+- Optional class reference selector: dropdown or tag input to specify which class the prompt is about (e.g. "3B"). Populates from workspace `classes/{classRef}/CLASS.md` directories.
 - This sends `classRef` to the backend so the correct class profile and curriculum are loaded
 
 #### Layout Evolution
