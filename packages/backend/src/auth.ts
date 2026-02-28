@@ -69,6 +69,12 @@ export function authenticateFromRequest(
   request: Request,
 ): Omit<Teacher, "passwordHash"> | null {
   const cookieHeader = request.headers.get("cookie") ?? "";
+  return authenticateFromCookieHeader(cookieHeader);
+}
+
+export function authenticateFromCookieHeader(
+  cookieHeader: string,
+): Omit<Teacher, "passwordHash"> | null {
   const token = readCookie(cookieHeader, AUTH_COOKIE);
   if (!token) {
     return null;
@@ -93,6 +99,10 @@ export function authenticateFromRequest(
 
 export function logoutFromRequest(request: Request): void {
   const cookieHeader = request.headers.get("cookie") ?? "";
+  logoutFromCookieHeader(cookieHeader);
+}
+
+export function logoutFromCookieHeader(cookieHeader: string): void {
   const token = readCookie(cookieHeader, AUTH_COOKIE);
   if (token) {
     revokeAuthToken(token);
