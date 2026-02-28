@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { createHandler } from "./server";
+import { startServer } from "./server";
 
 type ProviderTarget = {
   provider: "openai" | "anthropic";
@@ -22,7 +22,7 @@ type SmokeResult = {
   rawSse?: string;
 };
 
-const BASE_URL = "http://localhost";
+let baseUrl = "";
 const WORDS = [
   "fern",
   "harbor",
@@ -40,7 +40,7 @@ function pickWord(): string {
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
-  return createHandler(new Request(`${BASE_URL}${path}`, init));
+  return fetch(`${baseUrl}${path}`, init);
 }
 
 function parseSse(raw: string): {
@@ -84,6 +84,9 @@ function parseSse(raw: string): {
 }
 
 async function main(): Promise<void> {
+  const server = await startServer(Number(process.env.SMOKE_PORT ?? 3003));
+  baseUrl = `http://127.0.0.1:${server.port}`;
+
   const openAiModel = process.env.SMOKE_OPENAI_MODEL ?? "gpt-5-nano-2025-08-07";
   const anthropicModel =
     process.env.SMOKE_ANTHROPIC_MODEL ?? "claude-haiku-4-5";
@@ -94,115 +97,119 @@ async function main(): Promise<void> {
     { provider: "anthropic", model: anthropicModel },
   ];
 
-  const loginResponse = await request("/api/auth/login", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      email: "teacher@example.com",
-      password: "password123",
-    }),
-  });
-
-  if (loginResponse.status !== 200) {
-    const body = await loginResponse.text();
-    throw new Error(`Login failed: ${loginResponse.status} ${body}`);
-  }
-
-  const cookie = loginResponse.headers.get("set-cookie") ?? "";
-
-  const results: SmokeResult[] = [];
-
-  for (const target of targets) {
-    const word = pickWord();
-    const prompt = `Write me a haiku about ${word}.`;
-    const started = Date.now();
-
-    const response = await request("/api/chat", {
+  try {
+    const loginResponse = await request("/api/auth/login", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie,
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        provider: target.provider,
-        model: target.model,
-        stream: true,
-        maxTokens,
-        messages: [{ role: "user", content: prompt }],
+        email: "teacher@example.com",
+        password: "password123",
       }),
     });
 
-    const durationMs = Date.now() - started;
-
-    if (!response.ok) {
-      results.push({
-        provider: target.provider,
-        model: target.model,
-        prompt,
-        stream: true,
-        maxTokens,
-        ok: false,
-        status: response.status,
-        durationMs,
-        error: await response.text(),
-      });
-      continue;
+    if (loginResponse.status !== 200) {
+      const body = await loginResponse.text();
+      throw new Error(`Login failed: ${loginResponse.status} ${body}`);
     }
 
-    const rawSse = await response.text();
-    const parsed = parseSse(rawSse);
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
 
-    if (parsed.error) {
+    const results: SmokeResult[] = [];
+
+    for (const target of targets) {
+      const word = pickWord();
+      const prompt = `Write me a haiku about ${word}.`;
+      const started = Date.now();
+
+      const response = await request("/api/chat", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          provider: target.provider,
+          model: target.model,
+          stream: true,
+          maxTokens,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      const durationMs = Date.now() - started;
+
+      if (!response.ok) {
+        results.push({
+          provider: target.provider,
+          model: target.model,
+          prompt,
+          stream: true,
+          maxTokens,
+          ok: false,
+          status: response.status,
+          durationMs,
+          error: await response.text(),
+        });
+        continue;
+      }
+
+      const rawSse = await response.text();
+      const parsed = parseSse(rawSse);
+
+      if (parsed.error) {
+        results.push({
+          provider: target.provider,
+          model: target.model,
+          prompt,
+          stream: true,
+          maxTokens,
+          ok: false,
+          durationMs,
+          responseText: parsed.text,
+          error: parsed.error,
+          rawSse,
+        });
+        continue;
+      }
+
       results.push({
         provider: target.provider,
         model: target.model,
         prompt,
         stream: true,
         maxTokens,
-        ok: false,
+        ok: true,
         durationMs,
         responseText: parsed.text,
-        error: parsed.error,
         rawSse,
       });
-      continue;
     }
 
-    results.push({
-      provider: target.provider,
-      model: target.model,
-      prompt,
-      stream: true,
-      maxTokens,
-      ok: true,
-      durationMs,
-      responseText: parsed.text,
-      rawSse,
-    });
-  }
+    const smokeDir = resolve(process.cwd(), ".data", "smoke");
+    mkdirSync(smokeDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const logPath = resolve(smokeDir, `providers-${stamp}.json`);
+    writeFileSync(logPath, JSON.stringify(results, null, 2));
 
-  const smokeDir = resolve(process.cwd(), ".data", "smoke");
-  mkdirSync(smokeDir, { recursive: true });
-  const stamp = new Date().toISOString().replaceAll(":", "-");
-  const logPath = resolve(smokeDir, `providers-${stamp}.json`);
-  writeFileSync(logPath, JSON.stringify(results, null, 2));
-
-  for (const result of results) {
-    if (result.ok) {
-      console.log(
-        `[OK] ${result.provider}/${result.model} (${result.durationMs}ms) ${result.responseText}`,
-      );
-    } else {
-      console.log(
-        `[FAIL] ${result.provider}/${result.model} (${result.durationMs}ms) ${result.error}`,
-      );
+    for (const result of results) {
+      if (result.ok) {
+        console.log(
+          `[OK] ${result.provider}/${result.model} (${result.durationMs}ms) ${result.responseText}`,
+        );
+      } else {
+        console.log(
+          `[FAIL] ${result.provider}/${result.model} (${result.durationMs}ms) ${result.error}`,
+        );
+      }
     }
-  }
 
-  console.log(`Smoke log written to: ${logPath}`);
+    console.log(`Smoke log written to: ${logPath}`);
 
-  if (results.some((result) => !result.ok)) {
-    process.exitCode = 1;
+    if (results.some((result) => !result.ok)) {
+      process.exitCode = 1;
+    }
+  } finally {
+    await server.close();
   }
 }
 

@@ -9,7 +9,6 @@ import express, { type Express } from "express";
 
 import { AppModule } from "./app.module";
 import { seedDefaultTeacher } from "./auth";
-import { createLegacyHandler } from "./legacy-handler";
 
 export interface RunningServer {
   port: number;
@@ -84,12 +83,4 @@ export async function startServer(port = 3001): Promise<RunningServer> {
       appContextPromise = null;
     },
   };
-}
-
-export async function createHandler(request: Request): Promise<Response> {
-  return createLegacyHandler(request);
-}
-
-export async function stopCompatServerForTests(): Promise<void> {
-  // createHandler runs in-process and does not allocate a socket.
 }

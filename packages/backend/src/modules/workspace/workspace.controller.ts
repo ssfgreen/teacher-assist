@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Inject,
   Param,
   Post,
   Put,
@@ -13,15 +14,18 @@ import type { Request, Response } from "express";
 
 import { throwApiError } from "../../common/api-error";
 import { readWorkspaceFile } from "../../workspace";
-import type { AuthService } from "../auth/auth.service";
-import type { WorkspaceService } from "./workspace.service";
+import { AuthService } from "../auth/auth.service";
+import { WorkspaceService } from "./workspace.service";
 
-function parseWorkspacePath(relativePath?: string): string {
+function parseWorkspacePath(relativePath?: string | string[]): string {
   if (!relativePath) {
     throwApiError(400, "Invalid workspace path");
   }
 
-  const decoded = decodeURIComponent(relativePath);
+  const rawPath = Array.isArray(relativePath)
+    ? relativePath.join("/")
+    : relativePath;
+  const decoded = decodeURIComponent(rawPath);
   if (!decoded) {
     throwApiError(400, "Invalid workspace path");
   }
@@ -32,7 +36,9 @@ function parseWorkspacePath(relativePath?: string): string {
 @Controller("api/workspace")
 export class WorkspaceController {
   constructor(
+    @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(WorkspaceService)
     private readonly workspaceService: WorkspaceService,
   ) {}
 

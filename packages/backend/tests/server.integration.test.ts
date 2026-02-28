@@ -1,19 +1,37 @@
 import { randomUUID } from "node:crypto";
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "bun:test";
 import bcrypt from "bcrypt";
 
 import { resetAuthSeedForTests } from "../src/auth";
-import { createHandler } from "../src/server";
+import { type RunningServer, startServer } from "../src/server";
 import { createAuthToken, resetStores, upsertTeacher } from "../src/store";
 
-const baseUrl = "http://localhost";
+let runningServer: RunningServer;
+let baseUrl = "";
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
-  return createHandler(new Request(`${baseUrl}${path}`, init));
+  return fetch(`${baseUrl}${path}`, init);
 }
 
 describe("server integration", () => {
+  beforeAll(async () => {
+    runningServer = await startServer(3002);
+    baseUrl = `http://127.0.0.1:${runningServer.port}`;
+  });
+
+  afterAll(async () => {
+    await runningServer.close();
+  });
+
   beforeEach(() => {
     resetStores();
     resetAuthSeedForTests();

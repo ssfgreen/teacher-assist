@@ -1,20 +1,32 @@
-import { Body, Controller, Get, Post, Req, Res } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Post,
+  Req,
+  Res,
+} from "@nestjs/common";
 import type { Request, Response } from "express";
 
 import { buildAuthClearCookie, buildAuthSetCookie } from "../../auth";
 import { throwApiError } from "../../common/api-error";
 import type { Teacher } from "../../types";
-import type { WorkspaceService } from "../workspace/workspace.service";
-import type { AuthService } from "./auth.service";
+import { WorkspaceService } from "../workspace/workspace.service";
+import { AuthService } from "./auth.service";
 
 @Controller("api/auth")
 export class AuthController {
   constructor(
+    @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(WorkspaceService)
     private readonly workspaceService: WorkspaceService,
   ) {}
 
   @Post("login")
+  @HttpCode(200)
   async login(
     @Body() body: { email: string; password: string },
     @Res({ passthrough: true }) response: Response,
@@ -52,6 +64,7 @@ export class AuthController {
   }
 
   @Post("logout")
+  @HttpCode(200)
   logout(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,

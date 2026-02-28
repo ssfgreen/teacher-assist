@@ -1,17 +1,28 @@
-import { Body, Controller, Post, Req, Res } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Inject,
+  Post,
+  Req,
+  Res,
+} from "@nestjs/common";
 import type { Request, Response } from "express";
 
-import type { AuthService } from "../auth/auth.service";
-import type { ChatRequestBody, ChatService } from "./chat.service";
+import { AuthService } from "../auth/auth.service";
+import { type ChatRequestBody, ChatService } from "./chat.service";
 
 @Controller("api/chat")
 export class ChatController {
   constructor(
+    @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(ChatService)
     private readonly chatService: ChatService,
   ) {}
 
   @Post()
+  @HttpCode(200)
   async chat(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,

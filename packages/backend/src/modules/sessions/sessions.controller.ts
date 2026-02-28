@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Inject,
   Param,
   Post,
   Put,
@@ -12,13 +13,15 @@ import {
 import type { Request, Response } from "express";
 
 import type { ChatMessage } from "../../types";
-import type { AuthService } from "../auth/auth.service";
-import type { SessionsService } from "./sessions.service";
+import { AuthService } from "../auth/auth.service";
+import { SessionsService } from "./sessions.service";
 
 @Controller("api/sessions")
 export class SessionsController {
   constructor(
+    @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(SessionsService)
     private readonly sessionsService: SessionsService,
   ) {}
 

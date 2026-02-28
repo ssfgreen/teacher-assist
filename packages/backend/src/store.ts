@@ -1,62 +1,36 @@
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-
+import {
+  createAuthToken,
+  readAuthToken,
+  revokeAuthToken,
+} from "./store/auth-tokens";
+import { readStoreFromDisk, writeStoreToDisk } from "./store/persistence";
+import { checkRateLimit } from "./store/rate-limit";
+import {
+  appendSessionMessagesInMemory,
+  createSessionInMemory,
+  deleteSessionInMemory,
+  listSessionsByTeacher,
+  readSession,
+} from "./store/sessions";
+import {
+  authTokens,
+  rateLimitMap,
+  sessionsById,
+  teachersByEmail,
+  teachersById,
+} from "./store/state";
+import {
+  getTeacherByEmail,
+  getTeacherById,
+  upsertTeacherInMemory,
+} from "./store/teachers";
 import type { ChatMessage, Provider, SessionRecord, Teacher } from "./types";
 
-const teachersByEmail = new Map<string, Teacher>();
-const teachersById = new Map<string, Teacher>();
-const sessionsById = new Map<string, SessionRecord>();
-
-const authTokens = new Map<string, { teacherId: string; expiresAt: number }>();
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-const MAX_REQUESTS_PER_MINUTE = 60;
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const AUTH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-const DATA_DIR = resolve(process.cwd(), ".data");
-const STORE_PATH = resolve(DATA_DIR, "store.json");
-
-interface PersistedStore {
-  teachers: Teacher[];
-  sessions: SessionRecord[];
-}
-
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-function readStoreFromDisk(): PersistedStore {
-  ensureDataDir();
-
-  if (!existsSync(STORE_PATH)) {
-    return { teachers: [], sessions: [] };
-  }
-
-  try {
-    const raw = readFileSync(STORE_PATH, "utf8");
-    const parsed = JSON.parse(raw) as PersistedStore;
-    return {
-      teachers: parsed.teachers ?? [],
-      sessions: parsed.sessions ?? [],
-    };
-  } catch {
-    return { teachers: [], sessions: [] };
-  }
-}
-
-function writeStoreToDisk(): void {
-  ensureDataDir();
-
-  const payload: PersistedStore = {
+function persistStore(): void {
+  writeStoreToDisk({
     teachers: [...teachersById.values()],
     sessions: [...sessionsById.values()],
-  };
-
-  writeFileSync(STORE_PATH, JSON.stringify(payload, null, 2));
+  });
 }
 
 function hydrateStoreFromDisk(): void {
@@ -67,8 +41,7 @@ function hydrateStoreFromDisk(): void {
   sessionsById.clear();
 
   for (const teacher of persisted.teachers) {
-    teachersByEmail.set(teacher.email.toLowerCase(), teacher);
-    teachersById.set(teacher.id, teacher);
+    upsertTeacherInMemory(teacher);
   }
 
   for (const session of persisted.sessions) {
@@ -79,68 +52,19 @@ function hydrateStoreFromDisk(): void {
 hydrateStoreFromDisk();
 
 export function upsertTeacher(teacher: Teacher): void {
-  teachersByEmail.set(teacher.email.toLowerCase(), teacher);
-  teachersById.set(teacher.id, teacher);
-  writeStoreToDisk();
+  upsertTeacherInMemory(teacher);
+  persistStore();
 }
 
-export function getTeacherByEmail(email: string): Teacher | null {
-  return teachersByEmail.get(email.toLowerCase()) ?? null;
-}
-
-export function getTeacherById(id: string): Teacher | null {
-  return teachersById.get(id) ?? null;
-}
-
-export function createAuthToken(teacherId: string): string {
-  const token = randomUUID();
-  authTokens.set(token, {
-    teacherId,
-    expiresAt: Date.now() + AUTH_TOKEN_TTL_MS,
-  });
-  return token;
-}
-
-export function readAuthToken(token: string): string | null {
-  const record = authTokens.get(token);
-  if (!record) {
-    return null;
-  }
-  if (record.expiresAt < Date.now()) {
-    authTokens.delete(token);
-    return null;
-  }
-  return record.teacherId;
-}
-
-export function revokeAuthToken(token: string): void {
-  authTokens.delete(token);
-}
-
-export function checkRateLimit(teacherId: string): {
-  limited: boolean;
-  retryAfterSec?: number;
-} {
-  const now = Date.now();
-  const existing = rateLimitMap.get(teacherId);
-  if (!existing || existing.resetAt < now) {
-    rateLimitMap.set(teacherId, {
-      count: 1,
-      resetAt: now + RATE_LIMIT_WINDOW_MS,
-    });
-    return { limited: false };
-  }
-
-  if (existing.count >= MAX_REQUESTS_PER_MINUTE) {
-    return {
-      limited: true,
-      retryAfterSec: Math.ceil((existing.resetAt - now) / 1000),
-    };
-  }
-
-  existing.count += 1;
-  return { limited: false };
-}
+export {
+  getTeacherByEmail,
+  getTeacherById,
+  createAuthToken,
+  readAuthToken,
+  revokeAuthToken,
+  checkRateLimit,
+  readSession,
+};
 
 export function createSession(params: {
   teacherId: string;
@@ -148,29 +72,13 @@ export function createSession(params: {
   model: string;
   messages?: ChatMessage[];
 }): SessionRecord {
-  const now = new Date().toISOString();
-  const session: SessionRecord = {
-    id: randomUUID(),
-    teacherId: params.teacherId,
-    provider: params.provider,
-    model: params.model,
-    messages: params.messages ?? [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  sessionsById.set(session.id, session);
-  writeStoreToDisk();
+  const session = createSessionInMemory(params);
+  persistStore();
   return session;
 }
 
 export function listSessions(teacherId: string): SessionRecord[] {
-  return [...sessionsById.values()]
-    .filter((session) => session.teacherId === teacherId)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-export function readSession(id: string): SessionRecord | null {
-  return sessionsById.get(id) ?? null;
+  return listSessionsByTeacher(teacherId);
 }
 
 export function appendSessionMessages(
@@ -180,31 +88,25 @@ export function appendSessionMessages(
   provider?: Provider,
   model?: string,
 ): SessionRecord | null {
-  const existing = sessionsById.get(id);
-  if (!existing || existing.teacherId !== teacherId) {
-    return null;
+  const updated = appendSessionMessagesInMemory(
+    id,
+    teacherId,
+    messages,
+    provider,
+    model,
+  );
+  if (updated) {
+    persistStore();
   }
-
-  existing.messages = [...existing.messages, ...messages];
-  if (provider) {
-    existing.provider = provider;
-  }
-  if (model) {
-    existing.model = model;
-  }
-  existing.updatedAt = new Date().toISOString();
-  writeStoreToDisk();
-  return existing;
+  return updated;
 }
 
 export function deleteSession(id: string, teacherId: string): boolean {
-  const existing = sessionsById.get(id);
-  if (!existing || existing.teacherId !== teacherId) {
-    return false;
+  const deleted = deleteSessionInMemory(id, teacherId);
+  if (deleted) {
+    persistStore();
   }
-  sessionsById.delete(id);
-  writeStoreToDisk();
-  return true;
+  return deleted;
 }
 
 export function resetStores(): void {
@@ -213,5 +115,5 @@ export function resetStores(): void {
   sessionsById.clear();
   authTokens.clear();
   rateLimitMap.clear();
-  writeStoreToDisk();
+  persistStore();
 }

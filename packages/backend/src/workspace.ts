@@ -1,91 +1,31 @@
-import { normalize } from "node:path";
-import { SQL } from "bun";
-
-import { resolveDatabaseUrl } from "./config";
 import type { ChatMessage } from "./types";
+import {
+  CLASS_REF_PATTERN,
+  DEFAULT_SOUL,
+  classProfilePath,
+  knownSubjectTokens,
+} from "./workspace/defaults";
+import {
+  normalizeDirectoryPrefix,
+  normalizeRelativePath,
+} from "./workspace/path";
+import {
+  deleteWorkspaceFilePostgres,
+  ensureWorkspaceStorageReady,
+  listWorkspacePathsPostgres,
+  readWorkspaceFilePostgres,
+  resetTeacherWorkspaceForTests,
+  seedWorkspacePostgres,
+  writeWorkspaceFilePostgres,
+} from "./workspace/repository";
+import { buildTreeFromPaths } from "./workspace/tree";
+import type { LoadedWorkspaceContext, WorkspaceNode } from "./workspace/types";
 
-const CLASS_REF_PATTERN = /\b([1-6][A-Za-z])\b/g;
-
-const DEFAULT_SOUL = `# Assistant Identity
-
-You are a practical lesson-planning assistant.
-
-## Working stance
-- Draft, do not decide for the teacher.
-- Be explicit about tradeoffs and assumptions.
-- Do not claim curriculum alignment without evidence from workspace files.
-`;
-
-const DEFAULT_TEACHER = `# Teacher Profile
-
-- Name:
-- School:
-- Subject specialism:
-- Year groups taught:
-`;
-
-const DEFAULT_PEDAGOGY = `# Pedagogy Preferences
-
-- Preferred lesson structure:
-- Differentiation approaches:
-- Assessment style:
-- Classroom routines:
-`;
-
-const DEFAULT_CURRICULUM_STUB = `# Curriculum Notes
-
-Add curriculum references and copied excerpts here.
-`;
-
-const DEFAULT_CLASS_STUB = `# Class Profile
-
-- Size:
-- Stage:
-- Needs:
-- Prior learning:
-`;
-
-const CLASS_PROFILE_FILENAME = "CLASS.md";
-
-const DEFAULT_WORKSPACE_FILES: Array<{ path: string; content: string }> = [
-  { path: "soul.md", content: DEFAULT_SOUL },
-  { path: "teacher.md", content: DEFAULT_TEACHER },
-  { path: "pedagogy.md", content: DEFAULT_PEDAGOGY },
-  { path: "curriculum/README.md", content: DEFAULT_CURRICULUM_STUB },
-  { path: "classes/README.md", content: DEFAULT_CLASS_STUB },
-];
-
-let sqlClient: SQL | null = null;
-
-export interface WorkspaceNode {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  children?: WorkspaceNode[];
-}
-
-export interface LoadedWorkspaceContext {
-  assistantIdentity: string;
-  workspaceContextSections: Array<{ path: string; content: string }>;
-  loadedPaths: string[];
-  classRef: string | null;
-}
-
-const WORKSPACE_DB_CONFIG_ERROR =
-  "Workspace storage requires PostgreSQL. Ensure Postgres is running (`docker compose up -d`) and run `cd packages/backend && bun run migrate`.";
-
-function normalizeRelativePath(path: string): string {
-  const normalized = normalize(path).replaceAll("\\", "/").replace(/^\/+/, "");
-  if (!normalized || normalized === ".") {
-    throw new Error("Invalid workspace path");
-  }
-
-  if (normalized.includes("..") || normalized.startsWith("/")) {
-    throw new Error("Invalid workspace path");
-  }
-
-  return normalized;
-}
+export type { LoadedWorkspaceContext, WorkspaceNode } from "./workspace/types";
+export {
+  ensureWorkspaceStorageReady,
+  resetTeacherWorkspaceForTests,
+} from "./workspace/repository";
 
 function parseClassRef(value: string): string | null {
   const matches = [...value.matchAll(CLASS_REF_PATTERN)];
@@ -95,207 +35,6 @@ function parseClassRef(value: string): string | null {
 
   const match = matches.at(-1);
   return match?.[1]?.toUpperCase() ?? null;
-}
-
-function knownSubjectTokens(): string[] {
-  return [
-    "computing",
-    "science",
-    "math",
-    "mathematics",
-    "history",
-    "english",
-    "biology",
-    "chemistry",
-    "physics",
-    "geography",
-    "music",
-    "drama",
-    "art",
-  ];
-}
-
-function classProfilePath(classRef: string): string {
-  return `classes/${classRef}/${CLASS_PROFILE_FILENAME}`;
-}
-
-async function getSql(): Promise<SQL | null> {
-  if (!sqlClient) {
-    sqlClient = new SQL(resolveDatabaseUrl());
-  }
-
-  try {
-    await sqlClient`SELECT 1`;
-    return sqlClient;
-  } catch {
-    return null;
-  }
-}
-
-async function requireWorkspaceSql(): Promise<SQL> {
-  const sql = await getSql();
-  if (!sql) {
-    throw new Error(WORKSPACE_DB_CONFIG_ERROR);
-  }
-
-  try {
-    const rows = (await sql`
-      SELECT to_regclass('public.workspace_files') AS table_name
-    `) as Array<{ table_name: string | null }>;
-    if (!rows[0]?.table_name) {
-      throw new Error();
-    }
-  } catch {
-    throw new Error(
-      "workspace_files table is missing. Run `cd packages/backend && bun run migrate`.",
-    );
-  }
-
-  return sql;
-}
-
-export async function ensureWorkspaceStorageReady(): Promise<void> {
-  await requireWorkspaceSql();
-}
-
-async function seedWorkspacePostgres(teacherId: string): Promise<void> {
-  const sql = await requireWorkspaceSql();
-
-  for (const item of DEFAULT_WORKSPACE_FILES) {
-    await sql`
-      INSERT INTO workspace_files (teacher_id, path, content)
-      VALUES (${teacherId}, ${item.path}, ${item.content})
-      ON CONFLICT (teacher_id, path) DO NOTHING
-    `;
-  }
-}
-
-async function listWorkspacePathsPostgres(
-  teacherId: string,
-): Promise<string[]> {
-  const sql = await requireWorkspaceSql();
-
-  const rows = (await sql`
-    SELECT path FROM workspace_files
-    WHERE teacher_id = ${teacherId}
-    ORDER BY path ASC
-  `) as Array<{ path: string }>;
-
-  return rows.map((row) => row.path);
-}
-
-async function readWorkspaceFilePostgres(
-  teacherId: string,
-  relativePath: string,
-): Promise<string | null> {
-  const sql = await requireWorkspaceSql();
-
-  const rows = (await sql`
-    SELECT content FROM workspace_files
-    WHERE teacher_id = ${teacherId} AND path = ${relativePath}
-    LIMIT 1
-  `) as Array<{ content: string }>;
-
-  return rows[0]?.content ?? null;
-}
-
-async function writeWorkspaceFilePostgres(
-  teacherId: string,
-  relativePath: string,
-  content: string,
-): Promise<void> {
-  const sql = await requireWorkspaceSql();
-
-  await sql`
-    INSERT INTO workspace_files (teacher_id, path, content)
-    VALUES (${teacherId}, ${relativePath}, ${content})
-    ON CONFLICT (teacher_id, path)
-    DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
-  `;
-}
-
-async function deleteWorkspaceFilePostgres(
-  teacherId: string,
-  relativePath: string,
-): Promise<void> {
-  const sql = await requireWorkspaceSql();
-
-  await sql`
-    DELETE FROM workspace_files
-    WHERE teacher_id = ${teacherId} AND path = ${relativePath}
-  `;
-}
-
-function normalizeDirectoryPrefix(path: string): string {
-  return path.endsWith("/") ? path : `${path}/`;
-}
-
-function buildTreeFromPaths(paths: string[]): WorkspaceNode[] {
-  interface MutableNode {
-    name: string;
-    path: string;
-    type: "file" | "directory";
-    children?: Map<string, MutableNode>;
-  }
-
-  const root = new Map<string, MutableNode>();
-
-  for (const relativePath of paths) {
-    const parts = relativePath.split("/").filter(Boolean);
-    let current = root;
-    let currentPath = "";
-
-    for (let index = 0; index < parts.length; index += 1) {
-      const part = parts[index];
-      currentPath = currentPath ? `${currentPath}/${part}` : part;
-      const isLast = index === parts.length - 1;
-
-      if (!current.has(part)) {
-        current.set(part, {
-          name: part,
-          path: currentPath,
-          type: isLast ? "file" : "directory",
-          children: isLast ? undefined : new Map<string, MutableNode>(),
-        });
-      }
-
-      const node = current.get(part);
-      if (!node || !node.children) {
-        break;
-      }
-      current = node.children;
-    }
-  }
-
-  function toWorkspaceNodes(nodes: Map<string, MutableNode>): WorkspaceNode[] {
-    const list = [...nodes.values()].map((node) => {
-      if (node.type === "directory") {
-        return {
-          name: node.name,
-          path: node.path,
-          type: "directory" as const,
-          children: toWorkspaceNodes(node.children ?? new Map()),
-        };
-      }
-      return {
-        name: node.name,
-        path: node.path,
-        type: "file" as const,
-      };
-    });
-
-    return list.sort((a, b) => {
-      if (a.type === "directory" && b.type !== "directory") {
-        return -1;
-      }
-      if (a.type !== "directory" && b.type === "directory") {
-        return 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }
-
-  return toWorkspaceNodes(root);
 }
 
 export async function seedWorkspaceForTeacher(
@@ -471,10 +210,6 @@ async function maybeReadWorkspaceFile(
   }
 }
 
-async function listWorkspacePaths(teacherId: string): Promise<string[]> {
-  return listWorkspacePathsPostgres(teacherId);
-}
-
 export async function loadWorkspaceContext(params: {
   teacherId: string;
   messages: ChatMessage[];
@@ -522,7 +257,7 @@ export async function loadWorkspaceContext(params: {
       ...(classContent?.toLowerCase().match(/[a-z]+/g) ?? []),
     ];
 
-    const allPaths = await listWorkspacePaths(params.teacherId);
+    const allPaths = await listWorkspacePathsPostgres(params.teacherId);
     const curriculumFiles = allPaths
       .filter((path) => path.startsWith("curriculum/"))
       .filter((path) => path.toLowerCase().endsWith(".md"))
@@ -556,16 +291,4 @@ export async function loadWorkspaceContext(params: {
     loadedPaths: [...loadedPaths.values()],
     classRef: classRef ?? null,
   };
-}
-
-export async function resetTeacherWorkspaceForTests(
-  teacherId: string,
-): Promise<void> {
-  const sql = await getSql();
-  if (sql) {
-    await sql`
-      DELETE FROM workspace_files
-      WHERE teacher_id = ${teacherId}
-    `;
-  }
 }
