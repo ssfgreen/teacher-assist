@@ -51,4 +51,22 @@ describe("agent loop", () => {
 
     expect(result.status).toBe("error_max_budget");
   });
+
+  it("does not force class read_file when model returns a final answer", async () => {
+    const result = await runAgentLoop({
+      teacherId: "t1",
+      provider: "openai",
+      model: "mock-openai",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "Write a haiku about class 3B" },
+      ],
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.messages.some((message) => message.role === "tool")).toBe(
+      false,
+    );
+    expect(result.messages.at(-1)?.role).toBe("assistant");
+  });
 });

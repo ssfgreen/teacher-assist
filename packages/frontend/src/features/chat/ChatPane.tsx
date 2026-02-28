@@ -1,46 +1,7 @@
-import { Suspense, lazy } from "react";
-
 import type { ChatMessage, ChatTrace } from "../../types";
 import { displayContextPath } from "../workspace/path-utils";
-
-const ReactMarkdown = lazy(() => import("react-markdown"));
-
-function toolIcon(toolName?: string): string {
-  if (toolName === "read_skill") {
-    return "SK";
-  }
-  if (toolName === "read_file" || toolName === "write_file") {
-    return "FI";
-  }
-  if (toolName === "update_tasks") {
-    return "TS";
-  }
-  return "TL";
-}
-
-function toolSummary(message: ChatMessage): string {
-  if (message.toolName === "read_skill") {
-    const target =
-      typeof message.toolInput?.target === "string"
-        ? message.toolInput.target
-        : "skill";
-    return `Read skill: ${target}`;
-  }
-
-  if (message.toolName === "read_file" || message.toolName === "write_file") {
-    const path =
-      typeof message.toolInput?.path === "string"
-        ? message.toolInput.path
-        : "file";
-    return `${message.toolName === "read_file" ? "Read file" : "Write file"}: ${path}`;
-  }
-
-  if (message.toolName === "update_tasks") {
-    return "Updated tasks";
-  }
-
-  return `${message.toolName ?? "tool"} executed`;
-}
+import { AssistantMessage } from "./AssistantMessage";
+import { ToolCallMessage } from "./ToolCallMessage";
 
 interface ChatPaneProps {
   classRefs: string[];
@@ -205,47 +166,13 @@ export default function ChatPane({
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`}>
             {message.role === "tool" ? (
-              <details className="max-w-[90%] rounded-xl border border-paper-100 bg-paper-50 px-3 py-2 text-sm">
-                <summary className="cursor-pointer list-none font-medium">
-                  <span className="mr-1" aria-hidden="true">
-                    {toolIcon(message.toolName)}
-                  </span>
-                  {toolSummary(message)}
-                  {message.toolError ? " (error)" : ""}
-                </summary>
-                <div className="mt-2 space-y-2">
-                  <div>
-                    <p className="text-xs font-medium text-ink-800">
-                      Arguments
-                    </p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2 text-xs">
-                      {JSON.stringify(message.toolInput ?? {}, null, 2)}
-                    </pre>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-ink-800">Result</p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2 text-xs">
-                      {message.content}
-                    </pre>
-                  </div>
-                </div>
-              </details>
+              <ToolCallMessage message={message} />
             ) : (
               <div
                 className={`max-w-[85%] rounded-xl px-3 py-2 ${message.role === "user" ? "ml-auto bg-accent-600 text-white" : "bg-paper-50"}`}
               >
                 {message.role === "assistant" ? (
-                  <div className="prose prose-sm max-w-none">
-                    <Suspense
-                      fallback={
-                        <p className="whitespace-pre-wrap text-sm">
-                          {message.content}
-                        </p>
-                      }
-                    >
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
-                    </Suspense>
-                  </div>
+                  <AssistantMessage content={message.content} />
                 ) : (
                   <p className="whitespace-pre-wrap text-sm">
                     {message.content}

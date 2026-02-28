@@ -4,6 +4,9 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Workspace editor is lazy-loaded and intentionally large due to Milkdown/ProseMirror.
+    // Keep warning signal meaningful for eagerly loaded chunks while avoiding noise here.
+    chunkSizeWarningLimit: 1400,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -15,22 +18,32 @@ export default defineConfig({
             return "react";
           }
 
+          const packageMatch = id.match(/node_modules\/((?:@[^/]+\/)?[^/]+)/);
+          const packageName = packageMatch?.[1];
+          if (!packageName) {
+            return;
+          }
+
           if (
-            id.includes("react-markdown") ||
-            id.includes("remark-") ||
-            id.includes("rehype-") ||
-            id.includes("micromark") ||
-            id.includes("unified")
+            packageName === "react-markdown" ||
+            packageName.startsWith("remark-") ||
+            packageName.startsWith("rehype-") ||
+            packageName === "micromark" ||
+            packageName === "unified"
           ) {
             return "markdown";
           }
 
-          if (id.includes("@milkdown/")) {
-            return "milkdown";
+          if (packageName === "@milkdown/crepe") {
+            return "milkdown-crepe";
           }
 
-          if (id.includes("prosemirror-")) {
-            return "prosemirror";
+          if (packageName.startsWith("@milkdown/")) {
+            return `milkdown-${packageName.split("/")[1]}`;
+          }
+
+          if (packageName.startsWith("prosemirror-")) {
+            return `prosemirror-${packageName.replace("prosemirror-", "")}`;
           }
         },
       },

@@ -11,6 +11,12 @@ export async function seedWorkspace(): Promise<{ ok: boolean }> {
   });
 }
 
+export async function resetWorkspace(): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>("/api/workspace/reset", {
+    method: "POST",
+  });
+}
+
 export async function readWorkspaceFile(
   path: string,
 ): Promise<WorkspaceFileResponse> {

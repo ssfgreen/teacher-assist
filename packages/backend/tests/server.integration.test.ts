@@ -459,9 +459,18 @@ describe("server integration", () => {
       workspaceContextLoaded: string[];
     };
     expect(chatBody.workspaceContextLoaded.includes("soul.md")).toBe(true);
+    expect(chatBody.workspaceContextLoaded.includes("classes/index.md")).toBe(
+      true,
+    );
+    expect(chatBody.workspaceContextLoaded.includes("classes/catalog.md")).toBe(
+      true,
+    );
+    expect(
+      chatBody.workspaceContextLoaded.includes("curriculum/catalog.md"),
+    ).toBe(true);
     expect(
       chatBody.workspaceContextLoaded.includes("classes/3B/CLASS.md"),
-    ).toBe(true);
+    ).toBe(false);
 
     const deleteClassResponse = await request(
       "/api/workspace/classes/3B/CLASS.md",
@@ -477,6 +486,99 @@ describe("server integration", () => {
       headers: { cookie },
     });
     expect(deleteSoulResponse.status).toBe(400);
+  });
+
+  it("resets workspace to defaults", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const writeResponse = await request("/api/workspace/classes/3Z/CLASS.md", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({ content: "# Class 3Z" }),
+    });
+    expect(writeResponse.status).toBe(200);
+
+    const resetResponse = await request("/api/workspace/reset", {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(resetResponse.status).toBe(201);
+
+    const treeResponse = await request("/api/workspace", {
+      headers: { cookie },
+    });
+    expect(treeResponse.status).toBe(200);
+    const treeBody = (await treeResponse.json()) as {
+      tree: Array<{ path: string }>;
+    };
+    expect(treeBody.tree.some((node) => node.path === "soul.md")).toBe(true);
+    expect(
+      treeBody.tree.some((node) => node.path === "classes/3Z/CLASS.md"),
+    ).toBe(false);
+  });
+
+  it("includes class-loading guidance in the system prompt for class-targeted chat", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const writeClassResponse = await request(
+      "/api/workspace/classes/3B/CLASS.md",
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          content: "# Class 3B\nInterests: robotics",
+        }),
+      },
+    );
+    expect(writeClassResponse.status).toBe(200);
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        classRef: "3B",
+        messages: [{ role: "user", content: "Write a haiku about class 3B" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+
+    const chatBody = (await chatResponse.json()) as {
+      trace: { systemPrompt: string };
+    };
+
+    expect(chatBody.trace.systemPrompt).toContain(
+      "Use tool calls to load additional workspace files only when needed.",
+    );
+    expect(chatBody.trace.systemPrompt).toContain(
+      "For class-targeted requests, prefer reading `classes/{classRef}/CLASS.md` before making class-specific claims.",
+    );
   });
 
   it("lists available skills for authenticated users", async () => {
@@ -566,5 +668,156 @@ describe("server integration", () => {
       true,
     );
     expect(chatBody.trace.steps.length > 0).toBe(true);
+  });
+
+  it("persists trace/context/skills metadata across session reload", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-agentic-skill",
+        classRef: "3B",
+        messages: [{ role: "user", content: "Build lesson with skills" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+    const chatBody = (await chatResponse.json()) as { sessionId: string };
+
+    const sessionResponse = await request(
+      `/api/sessions/${chatBody.sessionId}`,
+      {
+        headers: { cookie },
+      },
+    );
+    expect(sessionResponse.status).toBe(200);
+    const sessionBody = (await sessionResponse.json()) as {
+      traceHistory?: Array<{ id: string; steps: unknown[] }>;
+      contextHistory?: string[][];
+      activeSkills?: string[];
+    };
+
+    expect((sessionBody.traceHistory?.length ?? 0) > 0).toBe(true);
+    expect((sessionBody.traceHistory?.[0]?.steps.length ?? 0) > 0).toBe(true);
+    expect((sessionBody.contextHistory?.length ?? 0) > 0).toBe(true);
+    expect(sessionBody.contextHistory?.[0]?.includes("classes/index.md")).toBe(
+      true,
+    );
+    expect(sessionBody.activeSkills?.includes("backward-design")).toBe(true);
+  });
+
+  it("handles write_file tool roundtrip via /api/chat", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-agentic-write",
+        messages: [{ role: "user", content: "Write a lesson draft file" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+
+    const chatBody = (await chatResponse.json()) as {
+      response: { content: string };
+      messages: Array<{
+        role: string;
+        toolName?: string;
+        content: string;
+        toolError?: boolean;
+      }>;
+    };
+
+    const writeToolMessage = chatBody.messages.find(
+      (message) => message.role === "tool" && message.toolName === "write_file",
+    );
+    expect(writeToolMessage).toBeDefined();
+    expect(writeToolMessage?.toolError).toBeFalsy();
+    expect(writeToolMessage?.content).toContain("Wrote outputs/lesson-plan.md");
+    expect(chatBody.response.content).toContain("outputs/lesson-plan.md");
+
+    const readFileResponse = await request(
+      "/api/workspace/outputs/lesson-plan.md",
+      {
+        headers: { cookie },
+      },
+    );
+    expect(readFileResponse.status).toBe(200);
+    const readFileBody = (await readFileResponse.json()) as { content: string };
+    expect(readFileBody.content).toContain("# Draft Lesson Plan");
+  });
+
+  it("recovers from tool execution errors via /api/chat", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-agentic-error",
+        messages: [
+          { role: "user", content: "Use a missing skill and recover" },
+        ],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+
+    const chatBody = (await chatResponse.json()) as {
+      response: { content: string };
+      messages: Array<{
+        role: string;
+        toolName?: string;
+        content: string;
+        toolError?: boolean;
+      }>;
+    };
+
+    const toolErrorMessage = chatBody.messages.find(
+      (message) => message.role === "tool" && message.toolName === "read_skill",
+    );
+    expect(toolErrorMessage).toBeDefined();
+    expect(toolErrorMessage?.toolError).toBe(true);
+    expect(toolErrorMessage?.content).toContain("missing-skill");
+    expect(chatBody.response.content).toContain(
+      "continued with a generic lesson structure",
+    );
   });
 });

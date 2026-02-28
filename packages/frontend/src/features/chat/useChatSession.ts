@@ -33,11 +33,15 @@ export function useChatSession({
   const [contextExpanded, setContextExpanded] = useState(false);
 
   useEffect(() => {
-    if (previousSessionIdRef.current !== currentSessionId) {
-      setTraceHistory([]);
-      previousSessionIdRef.current = currentSessionId;
+    if (previousSessionIdRef.current === currentSessionId) {
+      return;
     }
-  });
+
+    previousSessionIdRef.current = currentSessionId;
+    setTraceHistory(currentSession?.traceHistory ?? []);
+    setLastContextPaths(currentSession?.contextHistory?.[0] ?? []);
+    setActiveSkills(currentSession?.activeSkills ?? []);
+  }, [currentSession, currentSessionId]);
 
   const sendMessage = async () => {
     const content = messageInput.trim();
@@ -103,6 +107,16 @@ export function useChatSession({
         id: response.sessionId,
         updatedAt: new Date().toISOString(),
         messages: response.messages,
+        traceHistory: response.trace
+          ? [response.trace, ...(activeSession.traceHistory ?? [])]
+          : (activeSession.traceHistory ?? []),
+        contextHistory: response.workspaceContextLoaded
+          ? [
+              response.workspaceContextLoaded,
+              ...(activeSession.contextHistory ?? []),
+            ]
+          : (activeSession.contextHistory ?? []),
+        activeSkills: response.skillsLoaded ?? activeSession.activeSkills ?? [],
       });
       setLastContextPaths(response.workspaceContextLoaded ?? []);
       setActiveSkills(response.skillsLoaded ?? []);

@@ -206,7 +206,10 @@ Logs are written to:
 - `cd packages/frontend && bun run test` passes
 - `GET /api/skills` returns seeded skill manifest for authenticated user
 - `POST /api/chat` with `model: "mock-agentic-skill"` returns tool messages in `messages`
+- `POST /api/chat` with `model: "mock-agentic-write"` writes `outputs/lesson-plan.md` through tool loop
+- `POST /api/chat` with `model: "mock-agentic-error"` returns tool error in chain and recovers with final assistant response
 - Frontend chat renders tool-call summary blocks and expandable args/result sections
+- Frontend chat renders structured assistant lesson sections as distinct cards
 - Frontend `Skills` tab shows available skills and highlights active loaded skills
 
 ## Database Migrations
@@ -237,4 +240,4 @@ If you switch computers or recreate Docker volumes, rerun the migration command 
 
 - Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
 - Workspace editor now uses Milkdown (Crepe) for markdown editing
-- Real-provider native tool-call loops are not wired yet; Sprint 3 tool loops currently rely on mock-agentic model behavior
+- Real-provider native tool-call adapters are wired for non-stream model calls; streaming multi-turn tool loops are still validated primarily with mock-agentic models

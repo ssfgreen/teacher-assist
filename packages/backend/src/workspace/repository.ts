@@ -38,6 +38,18 @@ export async function seedWorkspacePostgres(teacherId: string): Promise<void> {
   }
 }
 
+export async function clearWorkspacePostgres(teacherId: string): Promise<void> {
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
+  await ds.query(
+    `
+    DELETE FROM workspace_files
+    WHERE teacher_id = $1::uuid
+    `,
+    [teacherId],
+  );
+}
+
 export async function listWorkspacePathsPostgres(
   teacherId: string,
 ): Promise<string[]> {
@@ -113,13 +125,5 @@ export async function deleteWorkspaceFilePostgres(
 export async function resetTeacherWorkspaceForTests(
   teacherId: string,
 ): Promise<void> {
-  await requireWorkspaceSql();
-  const ds = await getDataSource();
-  await ds.query(
-    `
-    DELETE FROM workspace_files
-    WHERE teacher_id = $1::uuid
-    `,
-    [teacherId],
-  );
+  await clearWorkspacePostgres(teacherId);
 }

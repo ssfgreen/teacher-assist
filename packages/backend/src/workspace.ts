@@ -3,13 +3,13 @@ import {
   CLASS_REF_PATTERN,
   DEFAULT_SOUL,
   classProfilePath,
-  knownSubjectTokens,
 } from "./workspace/defaults";
 import {
   normalizeDirectoryPrefix,
   normalizeRelativePath,
 } from "./workspace/path";
 import {
+  clearWorkspacePostgres,
   deleteWorkspaceFilePostgres,
   ensureWorkspaceStorageReady,
   listWorkspacePathsPostgres,
@@ -40,6 +40,13 @@ function parseClassRef(value: string): string | null {
 export async function seedWorkspaceForTeacher(
   teacherId: string,
 ): Promise<void> {
+  await seedWorkspacePostgres(teacherId);
+}
+
+export async function resetWorkspaceForTeacher(
+  teacherId: string,
+): Promise<void> {
+  await clearWorkspacePostgres(teacherId);
   await seedWorkspacePostgres(teacherId);
 }
 
@@ -226,6 +233,7 @@ export async function loadWorkspaceContext(params: {
 
   const workspaceContextSections: Array<{ path: string; content: string }> = [];
   const loadedPaths = new Set<string>();
+  const allPaths = await listWorkspacePathsPostgres(params.teacherId);
 
   const corePaths = ["teacher.md", "pedagogy.md"];
   for (const path of corePaths) {
@@ -238,50 +246,45 @@ export async function loadWorkspaceContext(params: {
   }
 
   if (classRef) {
-    const classPath = classProfilePath(classRef);
-    const classContent = await maybeReadWorkspaceFile(
-      params.teacherId,
-      classPath,
-    );
-    if (classContent) {
-      workspaceContextSections.push({ path: classPath, content: classContent });
-      loadedPaths.add(classPath);
-    }
-
-    const lowerSignal = [
-      ...knownSubjectTokens().filter((token) =>
-        params.messages.some((message) =>
-          message.content.toLowerCase().includes(token),
-        ),
-      ),
-      ...(classContent?.toLowerCase().match(/[a-z]+/g) ?? []),
-    ];
-
-    const allPaths = await listWorkspacePathsPostgres(params.teacherId);
-    const curriculumFiles = allPaths
-      .filter((path) => path.startsWith("curriculum/"))
-      .filter((path) => path.toLowerCase().endsWith(".md"))
-      .filter((path) => path.toLowerCase() !== "curriculum/readme.md")
-      .map((path) => path.replace("curriculum/", ""));
-
-    const relevantCurriculum = curriculumFiles.filter((file) => {
-      const normalized = file.toLowerCase();
-      return lowerSignal.some((token) => normalized.includes(token));
+    workspaceContextSections.push({
+      path: "classes/index.md",
+      content: `Selected class reference: ${classRef}\nClass profile path: ${classProfilePath(classRef)}\nUse read_file to load this profile only if needed.`,
     });
-
-    const selectedCurriculum =
-      relevantCurriculum.length > 0 ? relevantCurriculum : curriculumFiles;
-
-    for (const file of selectedCurriculum) {
-      const path = `curriculum/${file}`;
-      const content = await maybeReadWorkspaceFile(params.teacherId, path);
-      if (!content) {
-        continue;
-      }
-      workspaceContextSections.push({ path, content });
-      loadedPaths.add(path);
-    }
+    loadedPaths.add("classes/index.md");
   }
+
+  const availableClassRefs = allPaths
+    .map((path) => path.match(/^classes\/([^/]+)\/CLASS\.md$/i)?.[1] ?? null)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toUpperCase())
+    .sort((a, b) => a.localeCompare(b));
+
+  workspaceContextSections.push({
+    path: "classes/catalog.md",
+    content:
+      availableClassRefs.length > 0
+        ? `Available class references: ${availableClassRefs.join(", ")}`
+        : "Available class references: none",
+  });
+  loadedPaths.add("classes/catalog.md");
+
+  const curriculumFiles = allPaths
+    .filter((path) => path.startsWith("curriculum/"))
+    .filter((path) => path.toLowerCase().endsWith(".md"))
+    .filter((path) => path.toLowerCase() !== "curriculum/readme.md");
+
+  workspaceContextSections.push({
+    path: "curriculum/catalog.md",
+    content:
+      curriculumFiles.length > 0
+        ? [
+            "Available curriculum files:",
+            ...curriculumFiles.map((path) => `- ${path}`),
+            "Use read_file to load only relevant curriculum files.",
+          ].join("\n")
+        : "Available curriculum files: none",
+  });
+  loadedPaths.add("curriculum/catalog.md");
 
   loadedPaths.add("soul.md");
 

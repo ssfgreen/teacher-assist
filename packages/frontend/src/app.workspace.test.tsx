@@ -52,7 +52,6 @@ describe("App workspace", () => {
 
   it("creates a file inside the selected folder", async () => {
     const user = userEvent.setup();
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("3C/CLASS.md");
 
     render(<App />);
 
@@ -62,7 +61,12 @@ describe("App workspace", () => {
     await user.click(screen.getByRole("button", { name: "Workspace" }));
 
     await user.click(screen.getByRole("button", { name: /classes/i }));
-    await user.click(screen.getByRole("button", { name: "New File" }));
+    await user.click(screen.getByRole("button", { name: "Create file" }));
+    const input = await screen.findByRole("textbox", {
+      name: /New file name input/i,
+    });
+    await user.clear(input);
+    await user.type(input, "3C/CLASS.md{enter}");
 
     await waitFor(() => {
       expect(workspaceApi.writeWorkspaceFile).toHaveBeenCalledWith(
@@ -70,13 +74,10 @@ describe("App workspace", () => {
         expect.stringContaining("# New file"),
       );
     });
-
-    promptSpy.mockRestore();
   });
 
   it("creates a folder inside the selected folder", async () => {
     const user = userEvent.setup();
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("cfe");
 
     render(<App />);
 
@@ -86,7 +87,12 @@ describe("App workspace", () => {
     await user.click(screen.getByRole("button", { name: "Workspace" }));
 
     await user.click(screen.getByRole("button", { name: /curriculum/i }));
-    await user.click(screen.getByRole("button", { name: "New Folder" }));
+    await user.click(screen.getByRole("button", { name: "Create folder" }));
+    const input = await screen.findByRole("textbox", {
+      name: /New folder name input/i,
+    });
+    await user.clear(input);
+    await user.type(input, "cfe{enter}");
 
     await waitFor(() => {
       expect(workspaceApi.writeWorkspaceFile).toHaveBeenCalledWith(
@@ -94,15 +100,10 @@ describe("App workspace", () => {
         expect.stringContaining("# Folder Notes"),
       );
     });
-
-    promptSpy.mockRestore();
   });
 
-  it("renames the selected workspace item", async () => {
+  it("renames the selected workspace item inline", async () => {
     const user = userEvent.setup();
-    const promptSpy = vi
-      .spyOn(window, "prompt")
-      .mockReturnValue("CLASS-RENAMED.md");
 
     render(<App />);
 
@@ -111,8 +112,11 @@ describe("App workspace", () => {
     await screen.findByText("Demo Teacher");
     await user.click(screen.getByRole("button", { name: "Workspace" }));
 
-    await user.click(screen.getByRole("button", { name: "CLASS.md" }));
-    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.click(screen.getByRole("button", { name: /CLASS.md/i }));
+    await user.click(screen.getByRole("button", { name: "Rename selected" }));
+    const input = await screen.findByDisplayValue("CLASS.md");
+    await user.clear(input);
+    await user.type(input, "CLASS-RENAMED.md{enter}");
 
     await waitFor(() => {
       expect(workspaceApi.renameWorkspacePath).toHaveBeenCalledWith(
@@ -120,7 +124,71 @@ describe("App workspace", () => {
         "classes/3B/CLASS-RENAMED.md",
       );
     });
+  });
 
-    promptSpy.mockRestore();
+  it("creates CLASS.md when adding a class folder", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+
+    await user.click(screen.getByRole("button", { name: /^▾ ▣ classes$/i }));
+    await user.click(screen.getByRole("button", { name: "Create folder" }));
+    const input = await screen.findByRole("textbox", {
+      name: /New folder name input/i,
+    });
+    await user.clear(input);
+    await user.type(input, "3D{enter}");
+
+    await waitFor(() => {
+      expect(workspaceApi.writeWorkspaceFile).toHaveBeenCalledWith(
+        "classes/3D/CLASS.md",
+        expect.stringContaining("# Class Profile"),
+      );
+    });
+  });
+
+  it("deletes selected workspace path without modal", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+
+    await user.click(screen.getByRole("button", { name: /CLASS.md/i }));
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+
+    await waitFor(() => {
+      expect(workspaceApi.deleteWorkspaceFile).toHaveBeenCalledWith(
+        "classes/3B/CLASS.md",
+      );
+    });
+  });
+
+  it("shows reset confirmation modal and resets workspace on confirm", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+
+    await user.click(
+      screen.getByRole("button", { name: "Workspace settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Reset workspace" }));
+    await screen.findByText("Are you sure you want to do this?");
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(workspaceApi.resetWorkspace).toHaveBeenCalledTimes(1);
+    });
   });
 });

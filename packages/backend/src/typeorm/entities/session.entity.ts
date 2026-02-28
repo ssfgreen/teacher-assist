@@ -32,6 +32,27 @@ export class SessionEntity {
   @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
   tasks!: unknown;
 
+  @Column({
+    name: "trace_history",
+    type: "jsonb",
+    default: () => "'[]'::jsonb",
+  })
+  traceHistory!: unknown;
+
+  @Column({
+    name: "context_history",
+    type: "jsonb",
+    default: () => "'[]'::jsonb",
+  })
+  contextHistory!: unknown;
+
+  @Column({
+    name: "active_skills",
+    type: "jsonb",
+    default: () => "'[]'::jsonb",
+  })
+  activeSkills!: unknown;
+
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 

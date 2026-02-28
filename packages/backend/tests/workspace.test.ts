@@ -92,7 +92,7 @@ describe("workspace storage", () => {
     await cleanup();
   });
 
-  it("loads class and curriculum context for class chats", async () => {
+  it("loads class and curriculum catalogs first for class chats", async () => {
     await ensureTeacher();
     await cleanup();
 
@@ -114,10 +114,13 @@ describe("workspace storage", () => {
     });
 
     expect(context.loadedPaths.includes("soul.md")).toBe(true);
-    expect(context.loadedPaths.includes("classes/3B/CLASS.md")).toBe(true);
+    expect(context.loadedPaths.includes("classes/index.md")).toBe(true);
+    expect(context.loadedPaths.includes("classes/catalog.md")).toBe(true);
+    expect(context.loadedPaths.includes("curriculum/catalog.md")).toBe(true);
+    expect(context.loadedPaths.includes("classes/3B/CLASS.md")).toBe(false);
     expect(
       context.loadedPaths.includes("curriculum/computing-science.md"),
-    ).toBe(true);
+    ).toBe(false);
 
     await cleanup();
   });

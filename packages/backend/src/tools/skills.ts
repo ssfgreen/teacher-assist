@@ -7,10 +7,15 @@ interface SkillIndexItem extends SkillSummary {
   directory: string;
 }
 
-const SKILLS_ROOT = resolve(
-  process.cwd(),
-  "../../plugins/lesson-planning/skills",
-);
+function resolveSkillsRoot(): string {
+  const candidates = [
+    resolve(process.cwd(), "skills"),
+    resolve(process.cwd(), "../../skills"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+}
+
+const SKILLS_ROOT = resolveSkillsRoot();
 
 let cachedSkills: SkillIndexItem[] | null = null;
 

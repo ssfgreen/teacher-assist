@@ -7,7 +7,7 @@
 - `packages/backend`: Auth, chat, sessions, workspace APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session sidebar, workspace editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 + Sprint 1 + Sprint 2 plus Sprint 3 foundations (skills + agentic tool loop).
+The current implementation is Sprint 0 + Sprint 1 + Sprint 2 + Sprint 3 (skills + agentic tool loop + transparent tool/skill UI).
 
 ## Backend Runtime
 
@@ -46,7 +46,7 @@ Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit en
 System prompt assembly order:
 1. `<assistant-identity>` from workspace `soul.md` (with default fallback)
 2. `<agent-instructions>` static planner instructions
-3. `<workspace-context>` from teacher/pedagogy plus detected class/curriculum files
+3. `<workspace-context>` from teacher/pedagogy plus class/curriculum catalogs (progressive loading; full files fetched later via tools)
 4. `<skill-manifest>` from discovered skills folder
 5. `<tool-instructions>` generated from tool registry
 
@@ -56,6 +56,7 @@ Agent loop behavior:
 - Built-in tools are dispatched via `tools/registry.ts`.
 - Safety limits enforced: `maxTurns` and `maxBudgetUsd`.
 - Tool results are stored as `role: "tool"` messages and persisted to sessions.
+- For class-targeted prompts, system instructions tell the model to prefer reading `classes/{classRef}/CLASS.md` before making class-specific claims (without hard-enforcing a tool call).
 - Context is maintained by an explicit runtime context state (history, tool lifecycle, task progress, feedback, summary metrics).
 - Loop resilience controls prevent unproductive cycles:
   - per-chain tool retry cap (`maxToolRetries`)
@@ -82,6 +83,10 @@ Real model calls require provider API keys; missing keys return explicit config 
   - `DELETE /api/sessions/:id`
 - Session ownership is enforced per teacher.
 - Session records now include persisted task state (`tasks`) used by `update_tasks`.
+- Session records also persist runtime metadata used by the UI across logins:
+  - `traceHistory`
+  - `contextHistory`
+  - `activeSkills`
 
 Persistence strategy:
 
@@ -101,14 +106,15 @@ Persistence strategy:
 - Class profiles are expected at `classes/{classRef}/CLASS.md`.
 - Endpoints:
   - `GET /api/workspace`
+  - `POST /api/workspace/reset`
   - `GET /api/workspace/*path`
   - `PUT /api/workspace/*path`
   - `DELETE /api/workspace/*path` (`soul.md` protected)
-- `POST /api/workspace/seed`
+  - `POST /api/workspace/seed`
 
 ### Skills
 
-- Skills are discovered from `/skills/{skillName}`.
+- Skills are discovered from repo-root `skills/{skillName}` with cwd-aware fallback for backend test/runtime entrypoints.
 - `SKILL.md` frontmatter `description` fields are used to build Tier 1 manifest.
 - `read_skill` supports:
   - Tier 2: `skill-name` -> `SKILL.md`
@@ -147,10 +153,12 @@ Single-page React app with Zustand state stores.
 - Login/logout with auth bootstrap (`/api/auth/me`).
 - Session list, create, resume, delete.
 - Sidebar has stacked workspace/session sections. Clicking a workspace markdown file opens the workspace markdown editor in the main (two-thirds) pane, with autosave + manual save.
+- Workspace sidebar includes destructive reset flow behind a confirmation modal, with one-step undo immediately after reset.
 - Chat send with streaming UX:
   - Creates in-progress assistant bubble.
   - Appends streamed deltas live.
   - Finalizes on `done` event.
+  - Renders sectioned assistant outputs (`## Starter`, `## Main Activity`, `## Plenary`) as distinct section cards.
 - Chat hotkeys:
   - `Enter` sends.
   - `Shift+Enter` newline.
@@ -183,6 +191,7 @@ Single-page React app with Zustand state stores.
   - classRef propagation,
   - context indicator rendering,
   - tool-call timeline rendering,
+  - section-card rendering for structured assistant lesson outputs,
   - active-skill highlighting in the `Skills` tab.
 
 ## Key Engineering Decisions

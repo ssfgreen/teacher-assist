@@ -148,9 +148,13 @@ App
 - [x] Workspace file open + edit + save flows (`PUT /api/workspace/*path`)
 - [x] Debounced auto-save with manual save control
 - [x] File creation and deletion (with `soul.md` deletion blocked)
-- [x] Workspace seed action (`POST /api/workspace/seed`)
+- [x] Workspace reset action with warning modal and one-step undo (`POST /api/workspace/reset`)
 - [x] Folder-context "New Folder" and "New File" quick actions for filesystem-like workspace editing
+- [x] Inline create/rename flows in workspace tree (no prompt popups)
+- [x] Icon-based workspace actions (seed/rename/new folder/new file/delete)
 - [x] Rename action for selected workspace files/folders
+- [x] Path delete action supports files and folders from selected tree node
+- [x] Class folder creation seeds `CLASS.md` (not `README.md`)
 - [x] Class selector populated from workspace classes and sent as `classRef`
 - [x] Context indicator for `workspaceContextLoaded` metadata on chat responses
 - [x] Frontend tests for workspace read flow, classRef propagation, and context indicator rendering
@@ -177,8 +181,9 @@ App
 - The editor is a secondary panel that opens when a workspace file is selected, not a replacement for the chat
 - Save button + auto-save with debounce (PUT to `/api/workspace/*path`)
 - Create new file (within appropriate directories)
-- Delete file (with confirmation, `soul.md` protected)
-- Seed workspace button for first-time setup (calls `POST /api/workspace/seed`)
+- Delete file/folder path via inline double-confirm action (`soul.md` protected)
+- Reset workspace action with explicit warning modal ("Are you sure you want to do this?")
+- Undo reset action available immediately after reset
 
 #### Workspace Store (`useWorkspaceStore`)
 
@@ -224,9 +229,10 @@ App
 - Click file → editor opens with content
 - Edit file → save → API called → content persisted
 - Create new class file → appears in tree → editable
-- Delete file → confirmation → removed from tree
+- Delete selected path via inline action → removed from tree
 - `soul.md` cannot be deleted
-- Seed workspace creates expected files
+- Reset workspace warning modal appears before execution
+- Reset workspace restores expected default files
 - Class selector populates from workspace classes
 - Context indicator shows when workspace files used in response
 
@@ -323,8 +329,9 @@ Sidebar
 - [x] Skill panel aligned to root `skills/` + `SKILL.md` model (Agent Skills style)
 - [x] Active skill highlighting from chat response `skillsLoaded`
 - [x] Chat store/session state accepts full backend message chain
+- [x] Trace/context/active-skill session metadata restored when reopening sessions after relogin
 - [x] Frontend test coverage for tool-call rendering and active skill highlighting
-- [ ] Structured section-aware rendering beyond markdown headings (deeper adjudication-ready section model)
+- [x] Structured section-aware rendering beyond markdown headings (deeper adjudication-ready section model)
 
 ---
 

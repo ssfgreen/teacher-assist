@@ -43,6 +43,7 @@ export function resetStores(): void {
       classes: true,
       curriculum: true,
     },
+    canUndoReset: false,
   });
 
   localStorage.clear();
@@ -116,6 +117,7 @@ export function setupDefaultMocks(): void {
     classRefs: ["3B"],
   });
   vi.mocked(workspaceApi.seedWorkspace).mockResolvedValue({ ok: true });
+  vi.mocked(workspaceApi.resetWorkspace).mockResolvedValue({ ok: true });
   vi.mocked(workspaceApi.readWorkspaceFile).mockResolvedValue({
     path: "soul.md",
     content: "# Assistant Identity",

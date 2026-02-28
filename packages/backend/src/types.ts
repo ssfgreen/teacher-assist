@@ -81,6 +81,9 @@ export interface SessionRecord {
   model: string;
   messages: ChatMessage[];
   tasks: SessionTask[];
+  traceHistory: ChatTrace[];
+  contextHistory: string[][];
+  activeSkills: string[];
   createdAt: string;
   updatedAt: string;
 }

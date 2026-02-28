@@ -1,0 +1,4 @@
+ALTER TABLE sessions
+ADD COLUMN IF NOT EXISTS trace_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS context_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS active_skills JSONB NOT NULL DEFAULT '[]'::jsonb;

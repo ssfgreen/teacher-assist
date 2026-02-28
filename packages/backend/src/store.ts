@@ -10,6 +10,7 @@ import { SessionEntity } from "./typeorm/entities/session.entity";
 import { TeacherEntity } from "./typeorm/entities/teacher.entity";
 import type {
   ChatMessage,
+  ChatTrace,
   Provider,
   SessionRecord,
   SessionTask,
@@ -39,6 +40,9 @@ function toSessionRecord(entity: SessionEntity): SessionRecord {
     model: entity.model,
     messages: parseArray<ChatMessage>(entity.messages),
     tasks: parseArray<SessionTask>(entity.tasks),
+    traceHistory: parseArray<ChatTrace>(entity.traceHistory),
+    contextHistory: parseArray<string[]>(entity.contextHistory),
+    activeSkills: parseArray<string>(entity.activeSkills),
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
   };
@@ -101,6 +105,9 @@ export async function createSession(params: {
     model: params.model,
     messages: params.messages ?? [],
     tasks: params.tasks ?? [],
+    traceHistory: [],
+    contextHistory: [],
+    activeSkills: [],
     command: null,
     agentName: null,
   });
@@ -137,6 +144,11 @@ export async function appendSessionMessages(
   messages: ChatMessage[],
   provider?: Provider,
   model?: string,
+  runtime?: {
+    trace?: ChatTrace;
+    contextPaths?: string[];
+    activeSkills?: string[];
+  },
 ): Promise<SessionRecord | null> {
   const ds = await getDataSource();
   const repository = ds.getRepository(SessionEntity);
@@ -155,6 +167,21 @@ export async function appendSessionMessages(
   }
   if (model) {
     existing.model = model;
+  }
+  if (runtime?.trace) {
+    existing.traceHistory = [
+      runtime.trace,
+      ...parseArray<ChatTrace>(existing.traceHistory),
+    ];
+  }
+  if (runtime?.contextPaths) {
+    existing.contextHistory = [
+      runtime.contextPaths,
+      ...parseArray<string[]>(existing.contextHistory),
+    ];
+  }
+  if (runtime?.activeSkills) {
+    existing.activeSkills = runtime.activeSkills;
   }
 
   const updated = await repository.save(existing);

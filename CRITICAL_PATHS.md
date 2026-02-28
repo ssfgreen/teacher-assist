@@ -55,6 +55,7 @@ cd ../backend && bun test
     - `resumes a session when selected`
     - `does not highlight session cards while editing a workspace file`
     - `opens chat when selecting a session while editor is open`
+    - `restores persisted context and trace metadata when reopening a session`
 
 ### 5. Workspace editing and context transparency
 
@@ -65,7 +66,10 @@ cd ../backend && bun test
     - `opens workspace file and shows context indicator metadata`
     - `creates a file inside the selected folder`
     - `creates a folder inside the selected folder`
-    - `renames the selected workspace item`
+    - `renames the selected workspace item inline`
+    - `creates CLASS.md when adding a class folder`
+    - `deletes selected workspace path without modal`
+    - `shows reset confirmation modal and resets workspace on confirm`
 
 ### 6. Tool-use transparency and skill activation UI
 
@@ -74,6 +78,7 @@ cd ../backend && bun test
 - Tests:
   - `packages/frontend/src/app.auth-chat.test.tsx`
     - `renders tool call blocks and marks loaded skill as active`
+    - `renders assistant lesson sections as distinct blocks`
 
 ## Backend Critical Paths
 
@@ -127,14 +132,24 @@ cd ../backend && bun test
 - Tests:
   - `packages/backend/tests/server.integration.test.ts`
     - `supports workspace seed/read/write/delete and chat context metadata`
+    - `resets workspace to defaults`
+    - `includes class-loading guidance in the system prompt for class-targeted chat`
   - `packages/backend/tests/workspace.test.ts`
     - `seeds expected workspace defaults`
     - `supports file CRUD and protects soul.md deletion`
     - `loads soul fallback when soul.md is missing`
-    - `loads class and curriculum context for class chats`
+    - `loads class and curriculum catalogs first for class chats`
     - `extracts class reference from latest user message`
 
-### 7. Prompt assembly ordering
+### 7. Class-targeted response grounding via tool loop
+
+- Why critical:
+  - Class-specific outputs should be grounded in class profiles when needed, while preserving model discretion over tool usage.
+- Tests:
+  - `packages/backend/tests/server.integration.test.ts`
+    - `includes class-loading guidance in the system prompt for class-targeted chat`
+
+### 8. Prompt assembly ordering
 
 - Why critical:
   - Incorrect prompt ordering can alter model behavior significantly.
@@ -142,7 +157,7 @@ cd ../backend && bun test
   - `packages/backend/tests/prompt.test.ts`
     - `assembles sections in correct order with XML tags`
 
-### 8. Model adapter behavior and guardrails
+### 9. Model adapter behavior and guardrails
 
 - Why critical:
   - Provider abstraction failures can break all chat requests.
@@ -152,7 +167,7 @@ cd ../backend && bun test
     - `returns normalized mock response for mock model`
     - `throws configuration error for real model without API key`
 
-### 9. Skills manifest and agent loop tool chain
+### 10. Skills manifest and agent loop tool chain
 
 - Why critical:
   - Sprint 3 flow depends on discoverable skills and reliable multi-turn tool execution.
@@ -170,8 +185,11 @@ cd ../backend && bun test
   - `packages/backend/tests/server.integration.test.ts`
     - `lists available skills for authenticated users`
     - `returns full tool-use message chain and loaded skills from chat`
+    - `persists trace/context/skills metadata across session reload`
+    - `handles write_file tool roundtrip via /api/chat`
+    - `recovers from tool execution errors via /api/chat`
 
-### 10. Loop resilience under repeated failures and stalls
+### 11. Loop resilience under repeated failures and stalls
 
 - Why critical:
   - Agentic loops can burn turns/cost without progressing unless retries and stall detection are enforced.
@@ -181,7 +199,7 @@ cd ../backend && bun test
     - `returns error_no_progress when loop repeats without meaningful state change`
     - `forces final best-effort response when forceFinalizeOnStall is enabled`
 
-### 11. Recursive skill reference safety
+### 12. Recursive skill reference safety
 
 - Why critical:
   - Skill composition improves reuse but can create circular/deep expansion failures.
@@ -191,7 +209,7 @@ cd ../backend && bun test
     - `fails safely on circular skill references`
     - `reports missing referenced skill files without crashing loop`
 
-### 12. Memory prioritization and consolidation
+### 13. Memory prioritization and consolidation
 
 - Why critical:
   - Long-term quality depends on retrieving the right memory under token limits and promoting only high-signal learnings.

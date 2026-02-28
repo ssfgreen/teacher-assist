@@ -52,7 +52,11 @@ export default function App() {
   const workspaceError = useWorkspaceStore((state) => state.error);
   const expandedFolders = useWorkspaceStore((state) => state.expandedFolders);
   const initialiseWorkspace = useWorkspaceStore((state) => state.initialise);
-  const seedWorkspace = useWorkspaceStore((state) => state.seed);
+  const resetWorkspace = useWorkspaceStore((state) => state.reset);
+  const undoWorkspaceReset = useWorkspaceStore((state) => state.undoReset);
+  const canUndoWorkspaceReset = useWorkspaceStore(
+    (state) => state.canUndoReset,
+  );
   const toggleFolder = useWorkspaceStore((state) => state.toggleFolder);
   const openWorkspaceFile = useWorkspaceStore((state) => state.openFile);
   const setWorkspaceFileContent = useWorkspaceStore(
@@ -61,6 +65,7 @@ export default function App() {
   const saveWorkspaceFile = useWorkspaceStore((state) => state.saveOpenFile);
   const createWorkspaceFile = useWorkspaceStore((state) => state.createFile);
   const removeWorkspaceFile = useWorkspaceStore((state) => state.deleteFile);
+  const removeWorkspacePath = useWorkspaceStore((state) => state.deletePath);
   const renameWorkspacePath = useWorkspaceStore((state) => state.renamePath);
   const closeWorkspaceFile = useWorkspaceStore((state) => state.closeFile);
 
@@ -269,9 +274,12 @@ export default function App() {
               onSelectWorkspacePath={setSelectedWorkspacePath}
               onToggleFolder={toggleFolder}
               onOpenWorkspaceFile={openWorkspaceFile}
-              onSeedWorkspace={seedWorkspace}
+              onResetWorkspace={resetWorkspace}
+              onUndoWorkspaceReset={undoWorkspaceReset}
+              canUndoWorkspaceReset={canUndoWorkspaceReset}
               onRenameWorkspacePath={renameWorkspacePath}
               onCreateWorkspaceFile={createWorkspaceFile}
+              onDeleteWorkspacePath={removeWorkspacePath}
             />
           ) : null}
 

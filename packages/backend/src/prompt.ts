@@ -68,4 +68,6 @@ Rules:
 - Reference relevant workspace context where possible.
 - If context is missing, ask concise clarification questions.
 - Keep claims grounded in the provided workspace files.
+- Use tool calls to load additional workspace files only when needed.
+- For class-targeted requests, prefer reading \`classes/{classRef}/CLASS.md\` before making class-specific claims.
 `;

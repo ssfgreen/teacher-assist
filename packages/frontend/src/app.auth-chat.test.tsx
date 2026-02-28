@@ -212,4 +212,67 @@ describe("App auth and chat", () => {
     await screen.findByText("Generated prompt");
     await screen.findByText(/Estimated prompt tokens/i);
   });
+
+  it("renders assistant lesson sections as distinct blocks", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, onDelta) => {
+        onDelta("Lesson ");
+        onDelta("ready");
+        return {
+          sessionId: "s-sections",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Create a lesson" },
+            {
+              role: "assistant",
+              content: [
+                "## Starter",
+                "Quick retrieval check.",
+                "",
+                "## Main Activity",
+                "Pairs debug a loop example.",
+                "",
+                "## Plenary",
+                "Exit ticket reflection.",
+              ].join("\n"),
+            },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-sections-test",
+            createdAt: "2026-02-28T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Lesson ready",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Create sectioned lesson{enter}");
+
+    await screen.findByText("Starter");
+    const sectionCards = await screen.findAllByTestId("assistant-section");
+    expect(sectionCards.length).toBe(3);
+  });
 });

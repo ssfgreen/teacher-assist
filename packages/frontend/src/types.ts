@@ -22,6 +22,9 @@ export interface SessionRecord {
   model: string;
   messages: ChatMessage[];
   tasks?: Array<{ id: string; text: string; completed: boolean }>;
+  traceHistory?: ChatTrace[];
+  contextHistory?: string[][];
+  activeSkills?: string[];
   createdAt: string;
   updatedAt: string;
 }

@@ -154,4 +154,60 @@ describe("App sessions", () => {
     await screen.findByPlaceholderText("Type your message...");
     await screen.findByText("Loaded session response");
   });
+
+  it("restores persisted context and trace metadata when reopening a session", async () => {
+    const now = new Date().toISOString();
+    vi.mocked(authApi.me).mockResolvedValue(teacher);
+    vi.mocked(sessionsApi.listSessions).mockResolvedValue([
+      {
+        id: "s-existing",
+        teacherId: teacher.id,
+        provider: "openai",
+        model: "mock-openai",
+        messages: [{ role: "user", content: "Existing starter prompt" }],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    vi.mocked(sessionsApi.readSession).mockResolvedValue({
+      id: "s-existing",
+      teacherId: teacher.id,
+      provider: "openai",
+      model: "mock-openai",
+      messages: [
+        { role: "user", content: "Existing starter prompt" },
+        { role: "assistant", content: "Loaded session response" },
+      ],
+      traceHistory: [
+        {
+          id: "trace-persisted",
+          createdAt: now,
+          systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+          estimatedPromptTokens: 33,
+          status: "success",
+          steps: [
+            { toolName: "read_skill", input: {}, output: "ok", isError: false },
+          ],
+        },
+      ],
+      contextHistory: [["soul.md", "classes/index.md"]],
+      activeSkills: ["backward-design"],
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("Existing starter prompt");
+    await user.click(
+      screen.getByRole("button", { name: /Existing starter prompt/i }),
+    );
+
+    await screen.findByRole("button", { name: /Used context \(2\)/i });
+    await screen.findByRole("button", { name: /Trace log \(1\)/i });
+
+    await user.click(screen.getByRole("button", { name: "Skills" }));
+    await screen.findByText("Active");
+  });
 });

@@ -6,6 +6,7 @@ import {
   listClassRefs,
   listWorkspaceTree,
   renameWorkspacePath,
+  resetWorkspaceForTeacher,
   seedWorkspaceForTeacher,
   writeWorkspaceFile,
 } from "../../workspace";
@@ -19,6 +20,10 @@ const STORAGE_ERROR_FRAGMENTS = [
 export class WorkspaceService {
   async seed(teacherId: string): Promise<void> {
     await seedWorkspaceForTeacher(teacherId);
+  }
+
+  async reset(teacherId: string): Promise<void> {
+    await resetWorkspaceForTeacher(teacherId);
   }
 
   async list(teacherId: string): Promise<{

@@ -66,6 +66,19 @@ export class WorkspaceController {
     return { ok: true };
   }
 
+  @Post("reset")
+  async reset(@Req() request: Request): Promise<{ ok: true }> {
+    const teacher = await this.authService.requireTeacher(request);
+
+    try {
+      await this.workspaceService.reset(teacher.id);
+    } catch (error) {
+      this.workspaceService.throwStorageError(error);
+    }
+
+    return { ok: true };
+  }
+
   @Post("rename")
   async rename(
     @Req() request: Request,

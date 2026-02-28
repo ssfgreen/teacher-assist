@@ -201,22 +201,43 @@ export class ChatService {
       agentMessages: agentResult.messages,
     });
 
+    const finalAssistant =
+      [...agentResult.messages]
+        .reverse()
+        .find((message) => message.role === "assistant")?.content ?? "";
+
+    const trace: ChatTrace = {
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      systemPrompt,
+      estimatedPromptTokens: estimatedTokens,
+      status: agentResult.status,
+      steps: agentResult.messages
+        .filter((message) => message.role === "tool")
+        .map((message) => ({
+          toolName: message.toolName ?? "tool",
+          input: message.toolInput ?? {},
+          output: message.content,
+          isError: Boolean(message.toolError),
+        })),
+    };
+
     const persisted = await appendSessionMessages(
       session.sessionId,
       teacherId,
       deltaMessages,
       provider,
       body.model,
+      {
+        trace,
+        contextPaths: workspaceContext.loadedPaths,
+        activeSkills: agentResult.skillsLoaded,
+      },
     );
 
     if (!persisted) {
       throwApiError(404, "Session not found");
     }
-
-    const finalAssistant =
-      [...agentResult.messages]
-        .reverse()
-        .find((message) => message.role === "assistant")?.content ?? "";
 
     const responsePayload: ChatResultPayload = {
       response: {
@@ -229,21 +250,7 @@ export class ChatService {
       messages: persisted.messages,
       skillsLoaded: agentResult.skillsLoaded,
       workspaceContextLoaded: workspaceContext.loadedPaths,
-      trace: {
-        id: randomUUID(),
-        createdAt: new Date().toISOString(),
-        systemPrompt,
-        estimatedPromptTokens: estimatedTokens,
-        status: agentResult.status,
-        steps: agentResult.messages
-          .filter((message) => message.role === "tool")
-          .map((message) => ({
-            toolName: message.toolName ?? "tool",
-            input: message.toolInput ?? {},
-            output: message.content,
-            isError: Boolean(message.toolError),
-          })),
-      },
+      trace,
     };
 
     if (!body.stream) {

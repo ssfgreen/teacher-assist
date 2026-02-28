@@ -156,7 +156,7 @@ DELETE /api/sessions/:id
 - Given an agent definition's `workspace` array, resolve and load referenced files
 - Always load `soul.md` unconditionally (position 1 in prompt assembly)
 - Load teacher profile and pedagogy preferences based on agent config
-- Load class profile when a class is referenced in the user message (basic regex/keyword matching for now; feedforward hook will improve this later)
+- Load class/curriculum catalogs when a class is referenced in the user message, then rely on tool-driven progressive loading (`read_file`) for full files as needed
 - Load relevant curriculum files when class + subject are identified
 
 #### System Prompt Assembly (`prompt.ts`)
@@ -175,7 +175,7 @@ DELETE /api/sessions/:id
 
 - `POST /api/chat` now assembles system prompt from workspace before calling model
 - Request body extended: `{ messages, provider, model, sessionId?, classRef? }`
-- If `classRef` provided (e.g. "3B"), load that class profile and relevant curriculum
+- If `classRef` provided (e.g. "3B"), include the class reference/path in workspace context and let the agent choose whether to `read_file` the full class profile/curriculum
 - Response includes metadata: `{ response, usage, workspaceContextLoaded: string[] }`
 
 ### Tests
@@ -351,6 +351,7 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 - **Integration:** Agent loop with mock model: model calls `read_skill` → gets Tier 2 → calls `read_skill` for Tier 3 → produces final response. Verify full message chain.
 - **Integration:** Agent loop with mock model: model calls `write_file` → file created → model references it in response
 - **Integration:** Tool execution error → returned to model as error message → model recovers
+- **Integration:** Class-targeted prompt includes explicit prompt guidance to prefer `read_file("classes/{classRef}/CLASS.md")` before class-specific claims
 - **Integration:** Stalled loop enters forced-finalization path when `forceFinalizeOnStall=true`
 - **Integration:** System prompt includes skill manifest at correct position
 
@@ -371,7 +372,7 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 - [x] Unit coverage for registry/skills/agent safety limits
 - [x] Integration coverage for tool-chain chat response and skills endpoint
 - [x] Real-provider tool-calling adapters now pass tool definitions and parse native tool-call objects (OpenAI/Anthropic)
-- [ ] Integration coverage for `write_file` and tool-error recovery roundtrip via `/api/chat`
+- [x] Integration coverage for `write_file` and tool-error recovery roundtrip via `/api/chat`
 
 ---
 
