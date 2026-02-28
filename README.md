@@ -11,8 +11,7 @@ This repository currently includes Sprint 0, Sprint 1, and Sprint 2:
 - Frontend login/chat/session UI
 - Streaming responses (OpenAI + Anthropic + mock)
 - Disk-backed session persistence across backend restarts
-- Workspace file APIs with per-teacher filesystem storage
-- Workspace file APIs with per-teacher PostgreSQL persistence (filesystem mirror retained for local inspectability/fallback)
+- Workspace file APIs with per-teacher PostgreSQL persistence
 - System prompt assembly with injected workspace context (`soul.md`, profiles, class/curriculum files)
 - Frontend workspace tab, file editor, class selector, and context-used indicator
 - Frontend and backend critical-path automated tests
@@ -39,27 +38,41 @@ bun install
 docker compose up -d
 ```
 
-3. Verify lint passes:
+3. Create a root `.env` file with at least:
+
+```bash
+DATABASE_URL=postgres://teacher_assist:teacher_assist@localhost:5432/teacher_assist
+```
+
+4. Apply backend migrations (required on fresh machines):
+
+```bash
+cd packages/backend
+bun run migrate
+cd ../..
+```
+
+5. Verify lint passes:
 
 ```bash
 bun run lint
 ```
 
-4. Verify backend tests pass:
+6. Verify backend tests pass:
 
 ```bash
 cd packages/backend
 bun test
 ```
 
-5. Build frontend:
+7. Build frontend:
 
 ```bash
 cd packages/frontend
 bun run build
 ```
 
-6. Start backend API:
+8. Start backend API:
 
 ```bash
 cd packages/backend
@@ -69,7 +82,7 @@ bun run dev
 Expected backend output pattern:
 `teacher-assist backend listening on http://localhost:3001`
 
-7. Start frontend dev server (new terminal):
+9. Start frontend dev server (new terminal):
 
 ```bash
 cd packages/frontend
@@ -181,7 +194,14 @@ Sprint 0 includes:
 - `packages/backend/db/migrations/002_sessions.sql`
 - `packages/backend/db/migrations/003_workspace_files.sql`
 
-A migration runner is not wired yet. For manual application, use your preferred SQL client against the database from `docker-compose.yml`.
+Run migrations with:
+
+```bash
+cd packages/backend
+bun run migrate
+```
+
+If you switch computers or recreate Docker volumes, rerun the migration command before starting the backend.
 
 ## Project Structure
 
@@ -189,11 +209,10 @@ A migration runner is not wired yet. For manual application, use your preferred 
 - `packages/frontend`: Vite + React + TS frontend scaffold
 - `specifications/`: product and engineering specifications
 - `plugins/lesson-planning`: plugin content and skills
-- `workspace/`: workspace content used by the assistant
+- `workspace/`: seed markdown files and local artifacts
 
 ## Current Limitations
 
-- No migration runner wired yet
 - Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
-- Workspace editor is currently a plain textarea (CodeMirror/Monaco integration deferred)
-- Teachers/sessions are still persisted in local store JSON; workspace now persists in PostgreSQL when `DATABASE_URL` is available
+- Workspace editor now uses CodeMirror for markdown editing
+- Teachers/sessions are still persisted in local store JSON; workspace requires PostgreSQL

@@ -317,6 +317,8 @@ describe("App critical path", () => {
     await waitFor(() => {
       expect(workspaceApi.readWorkspaceFile).toHaveBeenCalledWith("soul.md");
     });
+    await screen.findByLabelText("Workspace file editor");
+    await screen.findByText("Assistant Identity");
 
     expect(screen.queryByPlaceholderText("Type your message...")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Back to chat" }));

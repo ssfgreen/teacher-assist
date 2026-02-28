@@ -1,6 +1,6 @@
 # Frontend Development Plan
 
-Companion to `backend.md`. Each sprint ships frontend and backend together — no capability exists on one side without the other. The frontend is a React + Tailwind CSS + TypeScript application built with Vite, using Zustand for state management and CodeMirror for workspace editing.
+Companion to `backend.md`. Each sprint ships frontend and backend together — no capability exists on one side without the other. The frontend is a React + Tailwind CSS + TypeScript application built with Vite, using Zustand for state management and a markdown editor for workspace editing.
 
 ---
 
@@ -152,7 +152,7 @@ App
 - [x] Class selector populated from workspace classes and sent as `classRef`
 - [x] Context indicator for `workspaceContextLoaded` metadata on chat responses
 - [x] Frontend tests for workspace read flow, classRef propagation, and context indicator rendering
-- [ ] CodeMirror/Monaco editor integration (currently plain textarea editor)
+- [x] Markdown editor integration (CodeMirror-based workspace editing)
 
 ### Deliverables
 
@@ -170,7 +170,7 @@ App
 
 #### Workspace Editor
 
-- CodeMirror (or Monaco) editor integrated for markdown editing
+- Markdown editor integrated for workspace file editing
 - Split-pane layout option: sidebar (file tree) | editor | chat — or sidebar (file tree + editor) | chat
 - The editor is a secondary panel that opens when a workspace file is selected, not a replacement for the chat
 - Save button + auto-save with debounce (PUT to `/api/workspace/*path`)
@@ -208,7 +208,7 @@ App
     │   └── WorkspaceTree
     │       └── FileTreeItem (clickable)
     ├── EditorPanel (conditional, when workspace file selected)
-    │   └── CodeMirrorEditor
+    │   └── WorkspaceEditor
     └── MainArea
         └── ChatWindow
             ├── ContextIndicator (which workspace files loaded)
@@ -464,7 +464,7 @@ TraceViewer (new — modal or panel)
   - `MEMORY.md` (teacher-level)
   - `classes/` → `3B/MEMORY.md`, `2C/MEMORY.md`, etc.
   - Topic files under each scope
-- Click to view/edit (CodeMirror editor, same as workspace files)
+- Click to view/edit (markdown editor, same as workspace files)
 - Changes persist via `PUT /api/memory/*path`
 - Delete memory file option
 

@@ -1,5 +1,11 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  type FormEvent,
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { sendChatStream } from "./api/chat";
 import Shell from "./components/layout/Shell";
@@ -7,6 +13,11 @@ import { useAuthStore } from "./stores/authStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import type { ChatMessage, Provider, WorkspaceNode } from "./types";
+
+const WorkspaceEditor = lazy(
+  () => import("./components/workspace/WorkspaceEditor"),
+);
+const ReactMarkdown = lazy(() => import("react-markdown"));
 
 const MODEL_OPTIONS: Record<Provider, string[]> = {
   anthropic: ["mock-anthropic", "claude-sonnet-4-6", "claude-haiku-4-5"],
@@ -484,13 +495,18 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <textarea
-              className="min-h-0 flex-1 rounded-lg border border-paper-100 px-2 py-2 font-mono text-xs"
-              value={workspaceFileContent}
-              onChange={(event) => setWorkspaceFileContent(event.target.value)}
-              disabled={workspaceLoading}
-              placeholder="Select a workspace file to edit..."
-            />
+            <Suspense
+              fallback={
+                <p className="text-xs text-ink-800">Loading editor...</p>
+              }
+            >
+              <WorkspaceEditor
+                key={workspaceFilePath}
+                value={workspaceFileContent}
+                onChange={setWorkspaceFileContent}
+                disabled={workspaceLoading}
+              />
+            </Suspense>
           </section>
         </div>
       ) : (
@@ -598,7 +614,15 @@ function ChatPane({
           >
             {message.role === "assistant" ? (
               <div className="prose prose-sm max-w-none">
-                <ReactMarkdown>{message.content}</ReactMarkdown>
+                <Suspense
+                  fallback={
+                    <p className="whitespace-pre-wrap text-sm">
+                      {message.content}
+                    </p>
+                  }
+                >
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </Suspense>
               </div>
             ) : (
               <p className="whitespace-pre-wrap text-sm">{message.content}</p>

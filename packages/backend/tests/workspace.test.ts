@@ -1,12 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
 
 import type { ChatMessage } from "../src/types";
 import {
   deleteWorkspaceFile,
   extractClassRefFromMessages,
-  getWorkspaceRootForTests,
   loadWorkspaceContext,
   readWorkspaceFile,
   resetTeacherWorkspaceForTests,
@@ -16,28 +13,37 @@ import {
 
 const teacherId = "workspace-teacher";
 
-function cleanup(): void {
-  resetTeacherWorkspaceForTests(teacherId);
+async function cleanup(): Promise<void> {
+  await resetTeacherWorkspaceForTests(teacherId);
 }
 
 describe("workspace storage", () => {
   it("seeds expected workspace defaults", async () => {
-    cleanup();
+    await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
 
-    const root = join(getWorkspaceRootForTests(), teacherId);
-    expect(existsSync(join(root, "soul.md"))).toBe(true);
-    expect(existsSync(join(root, "teacher.md"))).toBe(true);
-    expect(existsSync(join(root, "pedagogy.md"))).toBe(true);
-    expect(existsSync(join(root, "classes"))).toBe(true);
-    expect(existsSync(join(root, "curriculum"))).toBe(true);
+    await expect(readWorkspaceFile(teacherId, "soul.md")).resolves.toContain(
+      "Assistant Identity",
+    );
+    await expect(readWorkspaceFile(teacherId, "teacher.md")).resolves.toContain(
+      "Teacher Profile",
+    );
+    await expect(
+      readWorkspaceFile(teacherId, "pedagogy.md"),
+    ).resolves.toContain("Pedagogy Preferences");
+    await expect(
+      readWorkspaceFile(teacherId, "classes/README.md"),
+    ).resolves.toContain("Class Profile");
+    await expect(
+      readWorkspaceFile(teacherId, "curriculum/README.md"),
+    ).resolves.toContain("Curriculum Notes");
 
-    cleanup();
+    await cleanup();
   });
 
   it("supports file CRUD and protects soul.md deletion", async () => {
-    cleanup();
+    await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
     await writeWorkspaceFile(teacherId, "classes/3B/PROFILE.md", "# Class 3B");
@@ -54,16 +60,13 @@ describe("workspace storage", () => {
       "Cannot delete soul.md",
     );
 
-    cleanup();
+    await cleanup();
   });
 
   it("loads soul fallback when soul.md is missing", async () => {
-    cleanup();
+    await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
-
-    const soulPath = join(getWorkspaceRootForTests(), teacherId, "soul.md");
-    rmSync(soulPath, { force: true });
 
     const context = await loadWorkspaceContext({
       teacherId,
@@ -73,11 +76,11 @@ describe("workspace storage", () => {
 
     expect(context.assistantIdentity).toContain("Assistant Identity");
 
-    cleanup();
+    await cleanup();
   });
 
   it("loads class and curriculum context for class chats", async () => {
-    cleanup();
+    await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
     await writeWorkspaceFile(
@@ -102,7 +105,7 @@ describe("workspace storage", () => {
       context.loadedPaths.includes("curriculum/computing-science.md"),
     ).toBe(true);
 
-    cleanup();
+    await cleanup();
   });
 });
 

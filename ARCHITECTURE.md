@@ -37,7 +37,7 @@ The backend is a Bun HTTP server exposing `/api/*` routes.
 `POST /api/chat` accepts optional `maxTokens` and `classRef`, and forwards provider-appropriate token limit fields.
 
 System prompt assembly order:
-1. `<assistant-identity>` from `workspace/{teacherId}/soul.md` (with default fallback)
+1. `<assistant-identity>` from workspace `soul.md` (with default fallback)
 2. `<agent-instructions>` static planner instructions
 3. `<workspace-context>` from teacher/pedagogy plus detected class/curriculum files
 
@@ -68,7 +68,7 @@ Persistence strategy:
 ### Workspace
 
 - Workspace files are persisted in PostgreSQL (`workspace_files` table) keyed by `teacher_id` and `path`.
-- Files are also mirrored to `workspace/{teacherId}/` for local inspectability and filesystem fallback.
+- Backend startup requires PostgreSQL workspace storage to be reachable and migrated (`bun run migrate`).
 - Defaults are seeded on login / first access:
   - `soul.md`
   - `teacher.md`
@@ -106,7 +106,7 @@ Single-page React app with Zustand state stores.
 
 - Login/logout with auth bootstrap (`/api/auth/me`).
 - Session list, create, resume, delete.
-- Sidebar has stacked workspace/session sections. Clicking a workspace markdown file opens the editor in the main (two-thirds) pane, with autosave + manual save.
+- Sidebar has stacked workspace/session sections. Clicking a workspace markdown file opens the workspace markdown editor in the main (two-thirds) pane, with autosave + manual save.
 - Chat send with streaming UX:
   - Creates in-progress assistant bubble.
   - Appends streamed deltas live.

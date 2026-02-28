@@ -12,3 +12,13 @@ body {
   font-family: "IBM Plex Sans", system-ui, sans-serif;
   background: #f7f5f0;
 }
+
+.workspace-editor .cm-editor {
+  height: 100%;
+}
+
+.workspace-editor .cm-scroller {
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}

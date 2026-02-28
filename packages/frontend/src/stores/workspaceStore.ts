@@ -9,6 +9,8 @@ import {
 } from "../api/workspace";
 import type { WorkspaceNode } from "../types";
 
+let latestOpenFileRequestId = 0;
+
 interface WorkspaceState {
   tree: WorkspaceNode[];
   classRefs: string[];
@@ -93,9 +95,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   openFile: async (path) => {
+    const requestId = ++latestOpenFileRequestId;
     set({ loading: true, error: null });
     try {
       const file = await readWorkspaceFile(path);
+      if (requestId !== latestOpenFileRequestId) {
+        return;
+      }
       set({
         openFilePath: file.path,
         openFileContent: file.content,
@@ -103,6 +109,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         loading: false,
       });
     } catch (error) {
+      if (requestId !== latestOpenFileRequestId) {
+        return;
+      }
       set({
         loading: false,
         error: workspaceError(error, "Failed to open workspace file"),

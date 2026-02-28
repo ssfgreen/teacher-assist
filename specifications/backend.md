@@ -24,7 +24,7 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 
 ### Tests
 
-- [ ] Database connection and migration runner works
+- [x] Database connection and migration runner works
 - [ ] Teachers table CRUD operations
 - [ ] Sessions table CRUD operations
 - [ ] Environment variable loading
@@ -124,7 +124,7 @@ DELETE /api/sessions/:id
 
 ### Status (Implemented 2026-02-27)
 
-- [x] Workspace filesystem storage under `workspace/{teacherId}/`
+- [x] Workspace storage in PostgreSQL (`workspace_files`) keyed per teacher
 - [x] Non-destructive workspace seeding with defaults (`soul.md`, `teacher.md`, `pedagogy.md`, `curriculum/`, `classes/`)
 - [x] Workspace CRUD API (`GET/PUT/DELETE /api/workspace/*path`, `GET /api/workspace`, `POST /api/workspace/seed`)
 - [x] `soul.md` delete protection
@@ -133,14 +133,14 @@ DELETE /api/sessions/:id
 - [x] Prompt token estimation and runtime logging
 - [x] `/api/chat` response metadata includes `workspaceContextLoaded`
 - [x] Unit + integration coverage for workspace and prompt ordering
-- [x] Workspace persistence also stored in PostgreSQL (`workspace_files`) keyed per teacher
-- [x] Backend tests clean up UUID-named workspace artifacts after each run
+- [x] Workspace CRUD and seeding operate against PostgreSQL storage
+- [x] Backend startup validates workspace storage readiness (PostgreSQL + `workspace_files` table)
 
 ### Deliverables
 
 #### Workspace Storage & API
 
-- Workspace files stored on filesystem under `workspace/{teacherId}/` (keeps markdown files editable and inspectable; alternative: PostgreSQL if multi-tenancy requires it)
+- Workspace files stored in PostgreSQL under `workspace_files` (`teacher_id`, `path`, `content`)
 - Seed workspace templates on first login: `soul.md`, `teacher.md`, `pedagogy.md`, `curriculum/` (empty stubs), `classes/` (empty stubs)
 - Class profiles are stored as `classes/{classRef}/PROFILE.md` (e.g. `classes/3B/PROFILE.md`)
 - `GET /api/workspace` — list workspace file tree for current teacher

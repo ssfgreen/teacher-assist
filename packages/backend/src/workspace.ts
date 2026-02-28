@@ -83,6 +83,9 @@ export interface LoadedWorkspaceContext {
   classRef: string | null;
 }
 
+const WORKSPACE_DB_CONFIG_ERROR =
+  "Workspace storage requires PostgreSQL. Set DATABASE_URL and run `cd packages/backend && bun run migrate`.";
+
 function ensureWorkspaceRoot(): void {
   mkdirSync(WORKSPACE_ROOT, { recursive: true });
 }
@@ -220,27 +223,40 @@ async function getSql(): Promise<SQL | null> {
 
   try {
     await sqlClient`SELECT 1`;
-    await sqlClient`
-      CREATE TABLE IF NOT EXISTS workspace_files (
-        teacher_id TEXT NOT NULL,
-        path TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (teacher_id, path)
-      )
-    `;
     return sqlClient;
   } catch {
     return null;
   }
 }
 
-async function seedWorkspacePostgres(teacherId: string): Promise<void> {
+async function requireWorkspaceSql(): Promise<SQL> {
   const sql = await getSql();
   if (!sql) {
-    return;
+    throw new Error(WORKSPACE_DB_CONFIG_ERROR);
   }
+
+  try {
+    const rows = (await sql`
+      SELECT to_regclass('public.workspace_files') AS table_name
+    `) as Array<{ table_name: string | null }>;
+    if (!rows[0]?.table_name) {
+      throw new Error();
+    }
+  } catch {
+    throw new Error(
+      "workspace_files table is missing. Run `cd packages/backend && bun run migrate`.",
+    );
+  }
+
+  return sql;
+}
+
+export async function ensureWorkspaceStorageReady(): Promise<void> {
+  await requireWorkspaceSql();
+}
+
+async function seedWorkspacePostgres(teacherId: string): Promise<void> {
+  const sql = await requireWorkspaceSql();
 
   for (const item of DEFAULT_WORKSPACE_FILES) {
     await sql`
@@ -253,11 +269,8 @@ async function seedWorkspacePostgres(teacherId: string): Promise<void> {
 
 async function listWorkspacePathsPostgres(
   teacherId: string,
-): Promise<string[] | null> {
-  const sql = await getSql();
-  if (!sql) {
-    return null;
-  }
+): Promise<string[]> {
+  const sql = await requireWorkspaceSql();
 
   const rows = (await sql`
     SELECT path FROM workspace_files
@@ -272,10 +285,7 @@ async function readWorkspaceFilePostgres(
   teacherId: string,
   relativePath: string,
 ): Promise<string | null> {
-  const sql = await getSql();
-  if (!sql) {
-    return null;
-  }
+  const sql = await requireWorkspaceSql();
 
   const rows = (await sql`
     SELECT content FROM workspace_files
@@ -290,11 +300,8 @@ async function writeWorkspaceFilePostgres(
   teacherId: string,
   relativePath: string,
   content: string,
-): Promise<boolean> {
-  const sql = await getSql();
-  if (!sql) {
-    return false;
-  }
+): Promise<void> {
+  const sql = await requireWorkspaceSql();
 
   await sql`
     INSERT INTO workspace_files (teacher_id, path, content)
@@ -302,25 +309,18 @@ async function writeWorkspaceFilePostgres(
     ON CONFLICT (teacher_id, path)
     DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
   `;
-
-  return true;
 }
 
 async function deleteWorkspaceFilePostgres(
   teacherId: string,
   relativePath: string,
-): Promise<boolean> {
-  const sql = await getSql();
-  if (!sql) {
-    return false;
-  }
+): Promise<void> {
+  const sql = await requireWorkspaceSql();
 
   await sql`
     DELETE FROM workspace_files
     WHERE teacher_id = ${teacherId} AND path = ${relativePath}
   `;
-
-  return true;
 }
 
 function buildTreeFromPaths(paths: string[]): WorkspaceNode[] {
@@ -395,32 +395,14 @@ export async function seedWorkspaceForTeacher(
   teacherId: string,
 ): Promise<void> {
   await seedWorkspacePostgres(teacherId);
-
-  const root = ensureTeacherWorkspaceRoot(teacherId);
-  const curriculumDir = join(root, "curriculum");
-  const classesDir = join(root, "classes");
-
-  mkdirSync(curriculumDir, { recursive: true });
-  mkdirSync(classesDir, { recursive: true });
-
-  writeIfMissing(join(root, "soul.md"), DEFAULT_SOUL);
-  writeIfMissing(join(root, "teacher.md"), DEFAULT_TEACHER);
-  writeIfMissing(join(root, "pedagogy.md"), DEFAULT_PEDAGOGY);
-  writeIfMissing(join(curriculumDir, "README.md"), DEFAULT_CURRICULUM_STUB);
-  writeIfMissing(join(classesDir, "README.md"), DEFAULT_CLASS_STUB);
 }
 
 export async function listWorkspaceTree(
   teacherId: string,
 ): Promise<WorkspaceNode[]> {
   await seedWorkspaceForTeacher(teacherId);
-
   const dbPaths = await listWorkspacePathsPostgres(teacherId);
-  if (dbPaths) {
-    return buildTreeFromPaths(dbPaths);
-  }
-
-  return readDirectoryTree(teacherRoot(teacherId));
+  return buildTreeFromPaths(dbPaths);
 }
 
 export async function readWorkspaceFile(
@@ -431,12 +413,10 @@ export async function readWorkspaceFile(
   const normalizedPath = normalizeRelativePath(relativePath);
 
   const dbContent = await readWorkspaceFilePostgres(teacherId, normalizedPath);
-  if (dbContent !== null) {
-    return dbContent;
+  if (dbContent === null) {
+    throw new Error("Workspace file not found");
   }
-
-  const path = resolveWorkspacePath(teacherId, normalizedPath);
-  return readFileSync(path, "utf8");
+  return dbContent;
 }
 
 export async function writeWorkspaceFile(
@@ -446,13 +426,7 @@ export async function writeWorkspaceFile(
 ): Promise<void> {
   await seedWorkspaceForTeacher(teacherId);
   const normalizedPath = normalizeRelativePath(relativePath);
-
   await writeWorkspaceFilePostgres(teacherId, normalizedPath, content);
-
-  const path = resolveWorkspacePath(teacherId, normalizedPath);
-  const dir = resolve(path, "..");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path, content, "utf8");
 }
 
 export async function deleteWorkspaceFile(
@@ -465,9 +439,6 @@ export async function deleteWorkspaceFile(
   }
 
   await deleteWorkspaceFilePostgres(teacherId, normalized);
-
-  const path = resolveWorkspacePath(teacherId, normalized);
-  unlinkSync(path);
 }
 
 export function extractClassRefFromMessages(
@@ -489,38 +460,15 @@ export function extractClassRefFromMessages(
 
 export async function listClassRefs(teacherId: string): Promise<string[]> {
   await seedWorkspaceForTeacher(teacherId);
-
   const dbPaths = await listWorkspacePathsPostgres(teacherId);
-  if (dbPaths) {
-    const refs = new Set<string>();
-    for (const path of dbPaths) {
-      const match = path.match(/^classes\/([^/]+)\/PROFILE\.md$/i);
-      if (match?.[1]) {
-        refs.add(match[1].toUpperCase());
-      }
+  const refs = new Set<string>();
+  for (const path of dbPaths) {
+    const match = path.match(/^classes\/([^/]+)\/PROFILE\.md$/i);
+    if (match?.[1]) {
+      refs.add(match[1].toUpperCase());
     }
-    return [...refs].sort((a, b) => a.localeCompare(b));
   }
-
-  const classesPath = resolveWorkspacePath(teacherId, "classes");
-  const refs = readDirectoryEntries(classesPath)
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => {
-      const profilePath = resolveWorkspacePath(
-        teacherId,
-        classProfilePath(name.toUpperCase()),
-      );
-      try {
-        statSync(profilePath);
-        return true;
-      } catch {
-        return false;
-      }
-    })
-    .map((name) => name.toUpperCase());
-
-  return refs.sort((a, b) => a.localeCompare(b));
+  return [...refs].sort((a, b) => a.localeCompare(b));
 }
 
 async function maybeReadWorkspaceFile(
@@ -535,26 +483,7 @@ async function maybeReadWorkspaceFile(
 }
 
 async function listWorkspacePaths(teacherId: string): Promise<string[]> {
-  const dbPaths = await listWorkspacePathsPostgres(teacherId);
-  if (dbPaths) {
-    return dbPaths;
-  }
-
-  const tree = readDirectoryTree(teacherRoot(teacherId));
-  const paths: string[] = [];
-
-  function walk(nodes: WorkspaceNode[]): void {
-    for (const node of nodes) {
-      if (node.type === "file") {
-        paths.push(node.path);
-      } else {
-        walk(node.children ?? []);
-      }
-    }
-  }
-
-  walk(tree);
-  return paths;
+  return listWorkspacePathsPostgres(teacherId);
 }
 
 export async function loadWorkspaceContext(params: {
@@ -640,7 +569,17 @@ export async function loadWorkspaceContext(params: {
   };
 }
 
-export function resetTeacherWorkspaceForTests(teacherId: string): void {
+export async function resetTeacherWorkspaceForTests(
+  teacherId: string,
+): Promise<void> {
+  const sql = await getSql();
+  if (sql) {
+    await sql`
+      DELETE FROM workspace_files
+      WHERE teacher_id = ${teacherId}
+    `;
+  }
+
   const root = teacherRoot(teacherId);
   rmSync(root, { recursive: true, force: true });
 }
