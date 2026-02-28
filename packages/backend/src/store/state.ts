@@ -1,9 +1,3 @@
-import type { SessionRecord, Teacher } from "../types";
-
-export const teachersByEmail = new Map<string, Teacher>();
-export const teachersById = new Map<string, Teacher>();
-export const sessionsById = new Map<string, SessionRecord>();
-
 export const authTokens = new Map<
   string,
   { teacherId: string; expiresAt: number }

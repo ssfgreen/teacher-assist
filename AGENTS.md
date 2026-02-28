@@ -5,6 +5,7 @@
 These live in ./specifications
 
 There are four documents
+
 - product-spec.md which defines the vision for the product
 - dev-spec.md is the overall architecture and development ideas (open for tweaking)
 - frontend.md is a list of frontend tasks loosely structured around different sprints
@@ -28,5 +29,6 @@ There are four documents
 ## Architecture, readme and specifications
 
 - Keep an up-to-date ARCHITECTURE.md explaining the current architecture alongside key reasoning
-- Keep an up-to-date README.md
+- Keep an up-to-date README.md, ensure it doesn't duplicate information and remains clear
+- Keep an up-to-date CRITICAL_PATHS.md with key user flows and the tests that are ascribed to them
 - Keep specifications up to date with what has been done, including tasks that weren't previously in the spec document that were added along the way.

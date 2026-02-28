@@ -1,10 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { SQL } from "bun";
 
-import { resolveDatabaseUrl } from "./config";
-
-const databaseUrl = resolveDatabaseUrl();
+import { getDataSource } from "./db";
 
 const migrationsDir = resolve(import.meta.dir, "../db/migrations");
 const migrationFiles = readdirSync(migrationsDir)
@@ -16,35 +13,49 @@ if (migrationFiles.length === 0) {
   process.exit(0);
 }
 
-const sql = new SQL(databaseUrl);
+const ds = await getDataSource();
 
-await sql`
+await ds.query(`
   CREATE TABLE IF NOT EXISTS schema_migrations (
     filename TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )
-`;
+`);
 
 for (const filename of migrationFiles) {
-  const applied = (await sql`
+  const applied = (await ds.query(
+    `
     SELECT 1 FROM schema_migrations
-    WHERE filename = ${filename}
+    WHERE filename = $1
     LIMIT 1
-  `) as Array<{ "?column?": number }>;
+    `,
+    [filename],
+  )) as Array<{ "?column?": number }>;
 
   if (applied.length > 0) {
     console.log(`skip ${filename}`);
     continue;
   }
 
-  const sqlText = readFileSync(resolve(migrationsDir, filename), "utf8");
-  await sql.unsafe(sqlText);
-  await sql`
-    INSERT INTO schema_migrations (filename)
-    VALUES (${filename})
-  `;
-  console.log(`applied ${filename}`);
+  const queryRunner = ds.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  try {
+    const sqlText = readFileSync(resolve(migrationsDir, filename), "utf8");
+    await queryRunner.query(sqlText);
+    await queryRunner.query(
+      "INSERT INTO schema_migrations (filename) VALUES ($1)",
+      [filename],
+    );
+    await queryRunner.commitTransaction();
+    console.log(`applied ${filename}`);
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
 }
 
-await sql.close();
 console.log("Migrations complete.");

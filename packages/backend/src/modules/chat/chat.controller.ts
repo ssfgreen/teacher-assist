@@ -28,7 +28,7 @@ export class ChatController {
     @Res({ passthrough: true }) response: Response,
     @Body() body: ChatRequestBody,
   ) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     if (body.stream) {
       await this.chatService.handleChat(teacher.id, body, response);

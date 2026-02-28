@@ -1,7 +1,12 @@
 import { isMockModel, mockResponse, streamMockResponse } from "./model/mock";
 import { callAnthropic, streamAnthropic } from "./model/providers/anthropic";
 import { callOpenAI, streamOpenAI } from "./model/providers/openai";
-import type { ChatMessage, ModelResponse, Provider } from "./types";
+import type {
+  ChatMessage,
+  ModelResponse,
+  ModelToolDefinition,
+  Provider,
+} from "./types";
 
 export class ModelConfigurationError extends Error {
   constructor(message: string) {
@@ -50,6 +55,7 @@ export async function callModel(
   model: string,
   messages: ChatMessage[],
   maxTokens?: number,
+  tools?: ModelToolDefinition[],
 ): Promise<ModelResponse> {
   if (isMockModel(model)) {
     return mockResponse(provider, model, messages);
@@ -58,10 +64,10 @@ export async function callModel(
   const apiKey = resolveApiKey(provider);
 
   if (provider === "openai") {
-    return callOpenAI(model, messages, apiKey, maxTokens);
+    return callOpenAI(model, messages, apiKey, maxTokens, tools);
   }
 
-  return callAnthropic(model, messages, apiKey, maxTokens);
+  return callAnthropic(model, messages, apiKey, maxTokens, tools);
 }
 
 export function assertValidProvider(

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 
+import { listSkills, readSkill } from "./api/skills";
 import Shell from "./components/layout/Shell";
 import LoginPanel from "./features/auth/LoginPanel";
 import ChatPane from "./features/chat/ChatPane";
@@ -10,7 +11,7 @@ import { collectFiles, findNodeByPath } from "./features/workspace/path-utils";
 import { useAuthStore } from "./stores/authStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWorkspaceStore } from "./stores/workspaceStore";
-import type { Provider } from "./types";
+import type { Provider, SkillManifestItem } from "./types";
 
 const WorkspaceEditor = lazy(
   () => import("./components/workspace/WorkspaceEditor"),
@@ -64,7 +65,19 @@ export default function App() {
   const closeWorkspaceFile = useWorkspaceStore((state) => state.closeFile);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<
+    "sessions" | "workspace" | "skills"
+  >("sessions");
   const [selectedClassRef, setSelectedClassRef] = useState("");
+  const [skills, setSkills] = useState<SkillManifestItem[]>([]);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(
+    null,
+  );
+  const [selectedSkillContent, setSelectedSkillContent] = useState("");
+  const [skillLoading, setSkillLoading] = useState(false);
+  const [traceExpanded, setTraceExpanded] = useState(false);
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<
     string | null
   >(null);
@@ -77,6 +90,8 @@ export default function App() {
     contextExpanded,
     setContextExpanded,
     lastContextPaths,
+    activeSkills,
+    traceHistory,
     sendMessage,
   } = useChatSession({
     currentSession,
@@ -98,6 +113,36 @@ export default function App() {
     }
     void Promise.all([initialiseSessions(), initialiseWorkspace()]);
   }, [teacher, initialiseSessions, initialiseWorkspace]);
+
+  useEffect(() => {
+    if (!teacher) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await listSkills();
+        setSkills(response.skills);
+        setSkillsError(null);
+      } catch (error) {
+        setSkills([]);
+        setSkillsError(
+          error instanceof Error ? error.message : "Failed to load skills",
+        );
+      }
+    })();
+  }, [teacher]);
+
+  useEffect(() => {
+    if (traceHistory.length === 0) {
+      setSelectedTraceId(null);
+      return;
+    }
+
+    if (!selectedTraceId) {
+      setSelectedTraceId(traceHistory[0].id);
+    }
+  }, [traceHistory, selectedTraceId]);
 
   useEffect(() => {
     if (!workspaceDirty || !workspaceFilePath) {
@@ -186,71 +231,173 @@ export default function App() {
       }
       sidebar={
         <div className="space-y-4">
-          <WorkspaceSidebar
-            workspaceTree={workspaceTree}
-            workspaceFilesCount={workspaceFiles.length}
-            expandedFolders={expandedFolders}
-            activeFilePath={workspaceFilePath}
-            selectedWorkspacePath={selectedWorkspacePath}
-            selectedWorkspaceNode={selectedWorkspaceNode}
-            workspaceError={workspaceError}
-            onSelectWorkspacePath={setSelectedWorkspacePath}
-            onToggleFolder={toggleFolder}
-            onOpenWorkspaceFile={openWorkspaceFile}
-            onSeedWorkspace={seedWorkspace}
-            onRenameWorkspacePath={renameWorkspacePath}
-            onCreateWorkspaceFile={createWorkspaceFile}
-          />
-
           <section>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="font-display text-lg">Sessions</h2>
+            <div className="mb-2 grid grid-cols-3 gap-1">
               <button
-                className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
+                className={`rounded-lg border px-2 py-1 text-xs ${sidebarTab === "sessions" ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
                 type="button"
-                onClick={() => void createNewSession()}
+                onClick={() => setSidebarTab("sessions")}
               >
-                New
+                Sessions
+              </button>
+              <button
+                className={`rounded-lg border px-2 py-1 text-xs ${sidebarTab === "workspace" ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
+                type="button"
+                onClick={() => setSidebarTab("workspace")}
+              >
+                Workspace
+              </button>
+              <button
+                className={`rounded-lg border px-2 py-1 text-xs ${sidebarTab === "skills" ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
+                type="button"
+                onClick={() => setSidebarTab("skills")}
+              >
+                Skills
               </button>
             </div>
-            <div className="space-y-2">
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`rounded-lg border p-2 ${!workspaceFilePath && currentSession?.id === session.id ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
-                >
-                  <button
-                    className="w-full text-left text-sm"
-                    type="button"
-                    onClick={() => void openSessionInChat(session.id)}
-                  >
-                    {session.messages[0]?.content.slice(0, 48) || "New session"}
-                  </button>
-                  <div className="mt-2 flex items-center justify-between text-xs text-ink-800">
-                    <span>{new Date(session.updatedAt).toLocaleString()}</span>
-                    <button
-                      className="rounded border border-paper-100 px-2 py-0.5"
-                      type="button"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "Delete this session? This cannot be undone.",
-                          )
-                        ) {
-                          void deleteSession(session.id);
-                        }
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {sessions.length === 0 ? (
-                <p className="text-sm text-ink-800">No sessions yet.</p>
-              ) : null}
-            </div>
           </section>
+
+          {sidebarTab === "workspace" ? (
+            <WorkspaceSidebar
+              workspaceTree={workspaceTree}
+              workspaceFilesCount={workspaceFiles.length}
+              expandedFolders={expandedFolders}
+              activeFilePath={workspaceFilePath}
+              selectedWorkspacePath={selectedWorkspacePath}
+              selectedWorkspaceNode={selectedWorkspaceNode}
+              workspaceError={workspaceError}
+              onSelectWorkspacePath={setSelectedWorkspacePath}
+              onToggleFolder={toggleFolder}
+              onOpenWorkspaceFile={openWorkspaceFile}
+              onSeedWorkspace={seedWorkspace}
+              onRenameWorkspacePath={renameWorkspacePath}
+              onCreateWorkspaceFile={createWorkspaceFile}
+            />
+          ) : null}
+
+          {sidebarTab === "sessions" ? (
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="font-display text-lg">Sessions</h2>
+                <button
+                  className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
+                  type="button"
+                  onClick={() => void createNewSession()}
+                >
+                  New
+                </button>
+              </div>
+              <div className="space-y-2">
+                {sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={`rounded-lg border p-2 ${!workspaceFilePath && currentSession?.id === session.id ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
+                  >
+                    <button
+                      className="w-full text-left text-sm"
+                      type="button"
+                      onClick={() => void openSessionInChat(session.id)}
+                    >
+                      {session.messages[0]?.content.slice(0, 48) ||
+                        "New session"}
+                    </button>
+                    <div className="mt-2 flex items-center justify-between text-xs text-ink-800">
+                      <span>
+                        {new Date(session.updatedAt).toLocaleString()}
+                      </span>
+                      <button
+                        className="rounded border border-paper-100 px-2 py-0.5"
+                        type="button"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Delete this session? This cannot be undone.",
+                            )
+                          ) {
+                            void deleteSession(session.id);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {sessions.length === 0 ? (
+                  <p className="text-sm text-ink-800">No sessions yet.</p>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {sidebarTab === "skills" ? (
+            <section>
+              <h2 className="mb-2 font-display text-lg">Skills</h2>
+              <div className="space-y-2">
+                {skills.map((skill) => (
+                  <div
+                    key={skill.name}
+                    className={`rounded-lg border p-2 ${activeSkills.includes(skill.name) ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        className="text-left text-sm font-medium underline decoration-dotted underline-offset-2"
+                        type="button"
+                        onClick={() => {
+                          void (async () => {
+                            setSkillLoading(true);
+                            setSelectedSkillName(skill.name);
+                            try {
+                              const loaded = await readSkill(skill.name);
+                              setSelectedSkillContent(loaded.content);
+                              setSkillsError(null);
+                            } catch (error) {
+                              setSelectedSkillContent("");
+                              setSkillsError(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to load skill file",
+                              );
+                            } finally {
+                              setSkillLoading(false);
+                            }
+                          })();
+                        }}
+                      >
+                        {skill.name}
+                      </button>
+                      {activeSkills.includes(skill.name) ? (
+                        <span className="text-xs text-accent-600">Active</span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-xs text-ink-800">
+                      {skill.description}
+                    </p>
+                  </div>
+                ))}
+                {skills.length === 0 && !skillsError ? (
+                  <p className="text-sm text-ink-800">No skills available.</p>
+                ) : null}
+                {skillsError ? (
+                  <p className="text-sm text-red-700">{skillsError}</p>
+                ) : null}
+                {selectedSkillName ? (
+                  <div className="rounded-lg border border-paper-100 bg-white p-2">
+                    <p className="text-xs font-medium">
+                      {skillLoading
+                        ? `Loading ${selectedSkillName}...`
+                        : `${selectedSkillName} (full file)`}
+                    </p>
+                    {!skillLoading ? (
+                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">
+                        {selectedSkillContent}
+                      </pre>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
         </div>
       }
     >
@@ -318,6 +465,11 @@ export default function App() {
           lastContextPaths={lastContextPaths}
           contextExpanded={contextExpanded}
           setContextExpanded={setContextExpanded}
+          traceHistory={traceHistory}
+          traceExpanded={traceExpanded}
+          setTraceExpanded={setTraceExpanded}
+          selectedTraceId={selectedTraceId}
+          setSelectedTraceId={setSelectedTraceId}
           messages={messages}
           chatLoading={chatLoading}
           chatError={chatError}

@@ -4,12 +4,14 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 import * as authApi from "./api/auth";
 import * as chatApi from "./api/chat";
+import * as skillsApi from "./api/skills";
 import { setupDefaultMocks, teacher } from "./test/app-fixtures";
 
 vi.mock("./api/auth");
 vi.mock("./api/chat");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
+vi.mock("./api/skills");
 
 beforeEach(() => {
   setupDefaultMocks();
@@ -106,5 +108,108 @@ describe("App auth and chat", () => {
     expect(vi.mocked(chatApi.sendChatStream).mock.calls[0]?.[0]).toMatchObject({
       classRef: "3B",
     });
+  });
+
+  it("renders tool call blocks and marks loaded skill as active", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, onDelta) => {
+        onDelta("Draft ");
+        onDelta("ready");
+        return {
+          sessionId: "s1",
+          skillsLoaded: ["backward-design"],
+          messages: [
+            { role: "user", content: "Plan a lesson" },
+            {
+              role: "tool",
+              content:
+                "Skill: backward-design\\nTier: 2\\n\\n# Backward Design",
+              toolName: "read_skill",
+              toolInput: { target: "backward-design" },
+            },
+            { role: "assistant", content: "Draft ready" },
+          ],
+          workspaceContextLoaded: ["soul.md"],
+          trace: {
+            id: "trace-tool-test",
+            createdAt: "2026-02-28T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 12,
+            status: "success",
+            steps: [
+              {
+                toolName: "read_skill",
+                input: { target: "backward-design" },
+                output: "ok",
+                isError: false,
+              },
+            ],
+          },
+          response: {
+            content: "Draft ready",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan lesson{enter}");
+
+    await screen.findByText("Read skill: backward-design");
+    await user.click(screen.getByText("Read skill: backward-design"));
+    await screen.findByText("Arguments");
+    await screen.findByText("Result");
+
+    await user.click(screen.getByRole("button", { name: "Skills" }));
+    await screen.findByText("Active");
+  });
+
+  it("loads full skill file from the skills tab", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    await user.click(screen.getByRole("button", { name: "Skills" }));
+    await user.click(screen.getByRole("button", { name: "backward-design" }));
+
+    await waitFor(() => {
+      expect(skillsApi.readSkill).toHaveBeenCalledWith("backward-design");
+    });
+    await screen.findByText(/Backward Design/i);
+  });
+
+  it("shows generated prompt and trace steps", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    await screen.findByRole("button", { name: /Trace log/i });
+    await user.click(screen.getByRole("button", { name: /Trace log/i }));
+    await screen.findByText("Generated prompt");
+    await screen.findByText(/Estimated prompt tokens/i);
   });
 });

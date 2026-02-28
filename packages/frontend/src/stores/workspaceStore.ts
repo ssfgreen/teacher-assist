@@ -236,9 +236,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const nextOpenPath = currentOpenPath
         ? mapRenamedPath(currentOpenPath, fromPath, toPath)
         : null;
-      const nextSelectedContent = nextOpenPath
-        ? (await readWorkspaceFile(nextOpenPath)).content
-        : get().openFileContent;
+      let nextSelectedContent = get().openFileContent;
+      if (nextOpenPath) {
+        try {
+          nextSelectedContent = (await readWorkspaceFile(nextOpenPath)).content;
+        } catch {
+          nextSelectedContent = "";
+        }
+      }
 
       set({
         tree: data.tree,

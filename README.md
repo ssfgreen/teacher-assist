@@ -2,7 +2,7 @@
 
 Monorepo scaffold for the `teacher-assist` research prototype.
 
-This repository currently includes Sprint 0, Sprint 1, and Sprint 2:
+This repository currently includes Sprint 0, Sprint 1, Sprint 2, and a substantial Sprint 3 slice:
 - Monorepo workspaces (`packages/backend`, `packages/frontend`)
 - Bun + TypeScript setup
 - NestJS backend module architecture (controllers/services)
@@ -11,10 +11,15 @@ This repository currently includes Sprint 0, Sprint 1, and Sprint 2:
 - Backend auth/chat/session APIs
 - Frontend login/chat/session UI
 - Streaming responses (OpenAI + Anthropic + mock)
-- Disk-backed session persistence across backend restarts
+- PostgreSQL-backed teacher/session persistence across backend restarts
 - Workspace file APIs with per-teacher PostgreSQL persistence
 - System prompt assembly with injected workspace context (`soul.md`, profiles, class/curriculum files)
 - Frontend workspace tab, file editor, class selector, and context-used indicator
+- Agent loop orchestration (`runAgentLoop`) with tool-use turn cycling and safety limits
+- Tool registry + built-in tools (`read_file`, `write_file`, `str_replace`, `list_directory`, `read_skill`, `update_tasks`)
+- Skill manifest and tiered skill loading from `skills/`
+- Chat response message-chain transparency (tool messages + loaded skills metadata)
+- Frontend tool-call blocks and sidebar `Skills` tab with active-skill highlighting
 - Frontend and backend critical-path automated tests
 
 ## Prerequisites
@@ -194,6 +199,16 @@ Logs are written to:
 - Class selector sends `classRef` to backend
 - PostgreSQL container is healthy via `docker ps`
 
+## Sprint 3 Verification Checklist
+
+- `bun run lint` exits with code `0`
+- `cd packages/backend && bun test` passes
+- `cd packages/frontend && bun run test` passes
+- `GET /api/skills` returns seeded skill manifest for authenticated user
+- `POST /api/chat` with `model: "mock-agentic-skill"` returns tool messages in `messages`
+- Frontend chat renders tool-call summary blocks and expandable args/result sections
+- Frontend `Skills` tab shows available skills and highlights active loaded skills
+
 ## Database Migrations
 
 Sprint 0 includes:
@@ -215,11 +230,11 @@ If you switch computers or recreate Docker volumes, rerun the migration command 
 - `packages/backend`: NestJS-on-Bun backend
 - `packages/frontend`: Vite + React + TS frontend scaffold
 - `specifications/`: product and engineering specifications
-- `plugins/lesson-planning`: plugin content and skills
+- `skills/`: skills
 - `workspace/`: seed markdown files and local artifacts
 
 ## Current Limitations
 
 - Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
 - Workspace editor now uses Milkdown (Crepe) for markdown editing
-- Teachers/sessions are still persisted in local store JSON; workspace requires PostgreSQL
+- Real-provider native tool-call loops are not wired yet; Sprint 3 tool loops currently rely on mock-agentic model behavior

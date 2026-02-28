@@ -1,13 +1,52 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-import type { ChatMessage, ModelResponse } from "../../types";
+import type {
+  ChatMessage,
+  ModelResponse,
+  ModelToolDefinition,
+  ToolCall,
+} from "../../types";
 import { estimateUsage, toInputMessages } from "../shared";
+
+function parseAnthropicToolCalls(content: unknown): ToolCall[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const toolCalls: ToolCall[] = [];
+  for (const block of content) {
+    if (typeof block !== "object" || block === null) {
+      continue;
+    }
+
+    const record = block as Record<string, unknown>;
+    if (record.type !== "tool_use") {
+      continue;
+    }
+
+    const id = typeof record.id === "string" ? record.id : "";
+    const name = typeof record.name === "string" ? record.name : "";
+    const input =
+      typeof record.input === "object" && record.input !== null
+        ? (record.input as Record<string, unknown>)
+        : {};
+
+    if (!id || !name) {
+      continue;
+    }
+
+    toolCalls.push({ id, name, input });
+  }
+
+  return toolCalls;
+}
 
 export async function callAnthropic(
   model: string,
   messages: ChatMessage[],
   apiKey: string,
   maxTokens = 1024,
+  tools?: ModelToolDefinition[],
 ): Promise<ModelResponse> {
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
@@ -17,15 +56,21 @@ export async function callAnthropic(
       role: message.role === "assistant" ? "assistant" : "user",
       content: message.content,
     })),
+    tools: tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters,
+    })),
   });
 
+  const parsedToolCalls = parseAnthropicToolCalls(response.content);
   const content = response.content
     .map((block) => (block.type === "text" ? block.text : ""))
     .join("\n");
 
   return {
     content,
-    toolCalls: [],
+    toolCalls: parsedToolCalls,
     usage: {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
@@ -37,7 +82,7 @@ export async function callAnthropic(
         ).toFixed(6),
       ),
     },
-    stopReason: "stop",
+    stopReason: parsedToolCalls.length > 0 ? "tool_use" : "stop",
   };
 }
 

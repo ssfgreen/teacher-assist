@@ -10,6 +10,7 @@ vi.mock("./api/auth");
 vi.mock("./api/chat");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
+vi.mock("./api/skills");
 
 beforeEach(() => {
   setupDefaultMocks();
@@ -97,10 +98,15 @@ describe("App sessions", () => {
       "border-accent-600",
     );
 
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
     await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
     await screen.findByText("Editing soul.md");
 
-    expect(sessionCardButton.parentElement?.className).not.toContain(
+    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    const refreshedSessionCardButton = screen.getByRole("button", {
+      name: /Existing starter prompt/i,
+    });
+    expect(refreshedSessionCardButton.parentElement?.className).not.toContain(
       "border-accent-600",
     );
   });
@@ -136,9 +142,11 @@ describe("App sessions", () => {
     render(<App />);
 
     await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
     await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
     await screen.findByText("Editing soul.md");
 
+    await user.click(screen.getByRole("button", { name: "Sessions" }));
     await user.click(
       screen.getByRole("button", { name: /Existing starter prompt/i }),
     );

@@ -20,6 +20,8 @@ export function assembleSystemPrompt(params: {
   assistantIdentity: string;
   agentInstructions: string;
   workspaceContext: Array<{ path: string; content: string }>;
+  skillManifest?: string;
+  toolInstructions?: string;
 }): AssembledPrompt {
   const workspaceContextBody = params.workspaceContext
     .map((item) => `## ${item.path}\n${item.content.trim()}`)
@@ -37,6 +39,16 @@ export function assembleSystemPrompt(params: {
     {
       tag: "workspace-context",
       content: workspaceContextBody || "No workspace context loaded.",
+    },
+    {
+      tag: "skill-manifest",
+      content: params.skillManifest ?? "No skills available.",
+    },
+    {
+      tag: "tool-instructions",
+      content:
+        params.toolInstructions ??
+        "No tool instructions configured for this environment.",
     },
   ];
 

@@ -60,7 +60,7 @@ export default function WorkspaceSidebar({
               const suggestedName = selectedWorkspaceNode.path
                 .split("/")
                 .filter(Boolean)
-                .at(-1);
+                .slice(-1)[0];
               const nextPath = window.prompt(
                 "Rename to (name or path)",
                 suggestedName ?? selectedWorkspaceNode.path,
@@ -73,11 +73,13 @@ export default function WorkspaceSidebar({
                 selectedWorkspaceNode,
                 nextPath,
               );
-              void onRenameWorkspacePath(
-                selectedWorkspaceNode.path,
-                resolvedPath,
-              );
-              onSelectWorkspacePath(resolvedPath);
+              void (async () => {
+                await onRenameWorkspacePath(
+                  selectedWorkspaceNode.path,
+                  resolvedPath,
+                );
+                onSelectWorkspacePath(resolvedPath);
+              })();
             }}
             disabled={!selectedWorkspaceNode}
           >

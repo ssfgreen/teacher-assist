@@ -18,12 +18,12 @@ export class AuthService {
     await seedDefaultTeacher();
   }
 
-  authenticate(request: Request): AuthenticatedTeacher | null {
+  async authenticate(request: Request): Promise<AuthenticatedTeacher | null> {
     return authenticateFromCookieHeader(request.headers.cookie ?? "");
   }
 
-  requireTeacher(request: Request): AuthenticatedTeacher {
-    const teacher = this.authenticate(request);
+  async requireTeacher(request: Request): Promise<AuthenticatedTeacher> {
+    const teacher = await this.authenticate(request);
     if (!teacher) {
       throwApiError(401, "Unauthorized");
     }

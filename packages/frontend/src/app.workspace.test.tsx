@@ -10,6 +10,7 @@ vi.mock("./api/auth");
 vi.mock("./api/chat");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
+vi.mock("./api/skills");
 
 beforeEach(() => {
   setupDefaultMocks();
@@ -23,6 +24,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
 
     await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
 
@@ -57,6 +59,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
 
     await user.click(screen.getByRole("button", { name: /classes/i }));
     await user.click(screen.getByRole("button", { name: "New File" }));
@@ -80,6 +83,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
 
     await user.click(screen.getByRole("button", { name: /curriculum/i }));
     await user.click(screen.getByRole("button", { name: "New Folder" }));
@@ -105,6 +109,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
 
     await user.click(screen.getByRole("button", { name: "CLASS.md" }));
     await user.click(screen.getByRole("button", { name: "Rename" }));

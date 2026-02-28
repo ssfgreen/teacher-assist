@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { upsertTeacher } from "../src/store";
 import type { ChatMessage } from "../src/types";
 import {
   deleteWorkspaceFile,
@@ -11,14 +12,24 @@ import {
   writeWorkspaceFile,
 } from "../src/workspace";
 
-const teacherId = "workspace-teacher";
+const teacherId = "11111111-1111-4111-8111-111111111111";
 
 async function cleanup(): Promise<void> {
   await resetTeacherWorkspaceForTests(teacherId);
 }
 
+async function ensureTeacher(): Promise<void> {
+  await upsertTeacher({
+    id: teacherId,
+    email: "workspace-teacher@example.com",
+    name: "Workspace Teacher",
+    passwordHash: "test-hash",
+  });
+}
+
 describe("workspace storage", () => {
   it("seeds expected workspace defaults", async () => {
+    await ensureTeacher();
     await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
@@ -43,6 +54,7 @@ describe("workspace storage", () => {
   });
 
   it("supports file CRUD and protects soul.md deletion", async () => {
+    await ensureTeacher();
     await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
@@ -64,6 +76,7 @@ describe("workspace storage", () => {
   });
 
   it("loads soul fallback when soul.md is missing", async () => {
+    await ensureTeacher();
     await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
@@ -80,6 +93,7 @@ describe("workspace storage", () => {
   });
 
   it("loads class and curriculum context for class chats", async () => {
+    await ensureTeacher();
     await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);

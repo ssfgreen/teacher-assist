@@ -32,13 +32,13 @@ describe("server integration", () => {
     await runningServer.close();
   });
 
-  beforeEach(() => {
-    resetStores();
+  beforeEach(async () => {
+    await resetStores();
     resetAuthSeedForTests();
   });
 
-  afterEach(() => {
-    resetStores();
+  afterEach(async () => {
+    await resetStores();
     resetAuthSeedForTests();
   });
 
@@ -215,7 +215,7 @@ describe("server integration", () => {
     };
 
     const secondTeacherId = randomUUID();
-    upsertTeacher({
+    await upsertTeacher({
       id: secondTeacherId,
       email: "teacher2@example.com",
       name: "Teacher Two",
@@ -477,5 +477,94 @@ describe("server integration", () => {
       headers: { cookie },
     });
     expect(deleteSoulResponse.status).toBe(400);
+  });
+
+  it("lists available skills for authenticated users", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const response = await request("/api/skills", {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as {
+      skills: Array<{ name: string; description: string }>;
+    };
+    expect(body.skills.length > 0).toBe(true);
+    expect(body.skills.some((skill) => skill.name === "backward-design")).toBe(
+      true,
+    );
+  });
+
+  it("reads full skill file for a specific skill", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const response = await request("/api/skills/backward-design", {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as { content: string; tier: number };
+    expect(body.tier).toBe(2);
+    expect(body.content.includes("Backward Design")).toBe(true);
+  });
+
+  it("returns full tool-use message chain and loaded skills from chat", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-agentic-skill",
+        messages: [{ role: "user", content: "Build lesson with skills" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+    const chatBody = (await chatResponse.json()) as {
+      messages: Array<{ role: string; toolName?: string }>;
+      skillsLoaded: string[];
+      trace: { systemPrompt: string; steps: unknown[] };
+    };
+
+    expect(chatBody.messages.some((message) => message.role === "tool")).toBe(
+      true,
+    );
+    expect(
+      chatBody.messages.some((message) => message.toolName === "read_skill"),
+    ).toBe(true);
+    expect(chatBody.skillsLoaded.includes("backward-design")).toBe(true);
+    expect(chatBody.trace.systemPrompt.includes("<assistant-identity>")).toBe(
+      true,
+    );
+    expect(chatBody.trace.steps.length > 0).toBe(true);
   });
 });

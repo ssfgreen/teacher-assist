@@ -32,7 +32,19 @@ export function normalize(
 }
 
 export function toInputMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.filter((message) => message.role !== "system");
+  return messages
+    .filter((message) => message.role !== "system")
+    .map((message) => {
+      if (message.role !== "tool") {
+        return message;
+      }
+
+      const toolName = message.toolName ?? "tool";
+      return {
+        role: "user",
+        content: `[${toolName} result]\n${message.content}`,
+      };
+    });
 }
 
 export function openAiTokenLimitParam(

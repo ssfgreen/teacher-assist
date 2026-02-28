@@ -1,33 +1,13 @@
-import { SQL } from "bun";
+import { getDataSource } from "../db";
+import { DEFAULT_WORKSPACE_FILES } from "./defaults";
 
-import { resolveDatabaseUrl } from "../config";
-import { DEFAULT_WORKSPACE_FILES, WORKSPACE_DB_CONFIG_ERROR } from "./defaults";
-
-let sqlClient: SQL | null = null;
-
-async function getSql(): Promise<SQL | null> {
-  if (!sqlClient) {
-    sqlClient = new SQL(resolveDatabaseUrl());
-  }
+export async function requireWorkspaceSql(): Promise<void> {
+  const ds = await getDataSource();
 
   try {
-    await sqlClient`SELECT 1`;
-    return sqlClient;
-  } catch {
-    return null;
-  }
-}
-
-export async function requireWorkspaceSql(): Promise<SQL> {
-  const sql = await getSql();
-  if (!sql) {
-    throw new Error(WORKSPACE_DB_CONFIG_ERROR);
-  }
-
-  try {
-    const rows = (await sql`
-      SELECT to_regclass('public.workspace_files') AS table_name
-    `) as Array<{ table_name: string | null }>;
+    const rows = (await ds.query(
+      "SELECT to_regclass('public.workspace_files') AS table_name",
+    )) as Array<{ table_name: string | null }>;
     if (!rows[0]?.table_name) {
       throw new Error();
     }
@@ -36,8 +16,6 @@ export async function requireWorkspaceSql(): Promise<SQL> {
       "workspace_files table is missing. Run `cd packages/backend && bun run migrate`.",
     );
   }
-
-  return sql;
 }
 
 export async function ensureWorkspaceStorageReady(): Promise<void> {
@@ -45,27 +23,35 @@ export async function ensureWorkspaceStorageReady(): Promise<void> {
 }
 
 export async function seedWorkspacePostgres(teacherId: string): Promise<void> {
-  const sql = await requireWorkspaceSql();
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
 
   for (const item of DEFAULT_WORKSPACE_FILES) {
-    await sql`
+    await ds.query(
+      `
       INSERT INTO workspace_files (teacher_id, path, content)
-      VALUES (${teacherId}, ${item.path}, ${item.content})
+      VALUES ($1::uuid, $2, $3)
       ON CONFLICT (teacher_id, path) DO NOTHING
-    `;
+      `,
+      [teacherId, item.path, item.content],
+    );
   }
 }
 
 export async function listWorkspacePathsPostgres(
   teacherId: string,
 ): Promise<string[]> {
-  const sql = await requireWorkspaceSql();
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
 
-  const rows = (await sql`
+  const rows = (await ds.query(
+    `
     SELECT path FROM workspace_files
-    WHERE teacher_id = ${teacherId}
+    WHERE teacher_id = $1::uuid
     ORDER BY path ASC
-  `) as Array<{ path: string }>;
+    `,
+    [teacherId],
+  )) as Array<{ path: string }>;
 
   return rows.map((row) => row.path);
 }
@@ -74,13 +60,17 @@ export async function readWorkspaceFilePostgres(
   teacherId: string,
   relativePath: string,
 ): Promise<string | null> {
-  const sql = await requireWorkspaceSql();
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
 
-  const rows = (await sql`
+  const rows = (await ds.query(
+    `
     SELECT content FROM workspace_files
-    WHERE teacher_id = ${teacherId} AND path = ${relativePath}
+    WHERE teacher_id = $1::uuid AND path = $2
     LIMIT 1
-  `) as Array<{ content: string }>;
+    `,
+    [teacherId, relativePath],
+  )) as Array<{ content: string }>;
 
   return rows[0]?.content ?? null;
 }
@@ -90,36 +80,46 @@ export async function writeWorkspaceFilePostgres(
   relativePath: string,
   content: string,
 ): Promise<void> {
-  const sql = await requireWorkspaceSql();
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
 
-  await sql`
+  await ds.query(
+    `
     INSERT INTO workspace_files (teacher_id, path, content)
-    VALUES (${teacherId}, ${relativePath}, ${content})
+    VALUES ($1::uuid, $2, $3)
     ON CONFLICT (teacher_id, path)
     DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
-  `;
+    `,
+    [teacherId, relativePath, content],
+  );
 }
 
 export async function deleteWorkspaceFilePostgres(
   teacherId: string,
   relativePath: string,
 ): Promise<void> {
-  const sql = await requireWorkspaceSql();
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
 
-  await sql`
+  await ds.query(
+    `
     DELETE FROM workspace_files
-    WHERE teacher_id = ${teacherId} AND path = ${relativePath}
-  `;
+    WHERE teacher_id = $1::uuid AND path = $2
+    `,
+    [teacherId, relativePath],
+  );
 }
 
 export async function resetTeacherWorkspaceForTests(
   teacherId: string,
 ): Promise<void> {
-  const sql = await getSql();
-  if (sql) {
-    await sql`
-      DELETE FROM workspace_files
-      WHERE teacher_id = ${teacherId}
-    `;
-  }
+  await requireWorkspaceSql();
+  const ds = await getDataSource();
+  await ds.query(
+    `
+    DELETE FROM workspace_files
+    WHERE teacher_id = $1::uuid
+    `,
+    [teacherId],
+  );
 }

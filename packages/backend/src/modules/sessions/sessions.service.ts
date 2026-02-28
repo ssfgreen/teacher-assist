@@ -13,7 +13,7 @@ import type { ChatMessage, Provider } from "../../types";
 
 @Injectable()
 export class SessionsService {
-  create(params: {
+  async create(params: {
     teacherId: string;
     provider: string;
     model: string;
@@ -35,19 +35,19 @@ export class SessionsService {
     });
   }
 
-  list(teacherId: string) {
+  async list(teacherId: string) {
     return listSessions(teacherId);
   }
 
-  read(sessionId: string, teacherId: string) {
-    const session = readSession(sessionId);
+  async read(sessionId: string, teacherId: string) {
+    const session = await readSession(sessionId);
     if (!session || session.teacherId !== teacherId) {
       throwApiError(404, "Session not found");
     }
     return session;
   }
 
-  update(params: {
+  async update(params: {
     sessionId: string;
     teacherId: string;
     messages: ChatMessage[];
@@ -67,7 +67,7 @@ export class SessionsService {
       provider = params.provider;
     }
 
-    const updated = appendSessionMessages(
+    const updated = await appendSessionMessages(
       params.sessionId,
       params.teacherId,
       params.messages,
@@ -82,8 +82,8 @@ export class SessionsService {
     return updated;
   }
 
-  remove(sessionId: string, teacherId: string): void {
-    const deleted = deleteSession(sessionId, teacherId);
+  async remove(sessionId: string, teacherId: string): Promise<void> {
+    const deleted = await deleteSession(sessionId, teacherId);
     if (!deleted) {
       throwApiError(404, "Session not found");
     }

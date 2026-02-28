@@ -44,7 +44,7 @@ export class WorkspaceController {
 
   @Get()
   async list(@Req() request: Request) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       return await this.workspaceService.list(teacher.id);
@@ -55,7 +55,7 @@ export class WorkspaceController {
 
   @Post("seed")
   async seed(@Req() request: Request): Promise<{ ok: true }> {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       await this.workspaceService.seed(teacher.id);
@@ -71,7 +71,7 @@ export class WorkspaceController {
     @Req() request: Request,
     @Body() body: { fromPath: string; toPath: string },
   ) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       const result = await this.workspaceService.rename({
@@ -91,7 +91,7 @@ export class WorkspaceController {
 
   @Get("*path")
   async read(@Req() request: Request, @Param("path") path: string) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       const relativePath = parseWorkspacePath(path);
@@ -111,7 +111,7 @@ export class WorkspaceController {
     @Param("path") path: string,
     @Body() body: { content: string },
   ) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       const relativePath = parseWorkspacePath(path);
@@ -135,7 +135,7 @@ export class WorkspaceController {
     @Param("path") path: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       const relativePath = parseWorkspacePath(path);

@@ -52,7 +52,7 @@ export class AuthController {
 
   @Get("me")
   async me(@Req() request: Request) {
-    const teacher = this.authService.requireTeacher(request);
+    const teacher = await this.authService.requireTeacher(request);
 
     try {
       await this.workspaceService.seed(teacher.id);
@@ -65,11 +65,11 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(200)
-  logout(
+  async logout(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): { ok: true } {
-    this.authService.requireTeacher(request);
+  ): Promise<{ ok: true }> {
+    await this.authService.requireTeacher(request);
     this.authService.logout(request);
     response.setHeader("set-cookie", buildAuthClearCookie());
     return { ok: true };

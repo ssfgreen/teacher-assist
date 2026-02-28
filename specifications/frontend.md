@@ -267,8 +267,10 @@ App
 #### Skill Manifest Display
 
 - In the workspace sidebar (or a dedicated "Skills" tab), show the available skills with their Tier 1 descriptions
+- Skills are sourced from backend `GET /api/skills` (which discovers root-level `skills/`), not from direct frontend filesystem assumptions
 - Read-only for MVP — skills are authored by the researcher, not editable by teachers
 - When a skill is loaded during a session (Tier 2 or 3), highlight it in the manifest as "active"
+- Clicking a skill opens full `SKILL.md` content via backend API (frontend remains read-only)
 
 #### Enhanced Message Rendering
 
@@ -310,6 +312,19 @@ Sidebar
 - Active skill highlight when skill loaded in session
 - Structured assistant message renders with section headings
 - Message ordering preserves chronological tool call flow
+
+### Sprint 3 Status (Current)
+
+- [x] Collapsible tool-call blocks in chat timeline with args/result detail
+- [x] Tool-specific summaries for `read_skill`, file tools, and task updates
+- [x] Message ordering preserved with interleaved tool/result messages
+- [x] Sidebar tabs for `Sessions`, `Workspace`, and new `Skills` manifest tab
+- [x] Skill manifest loaded from backend and rendered read-only
+- [x] Skill panel aligned to root `skills/` + `SKILL.md` model (Agent Skills style)
+- [x] Active skill highlighting from chat response `skillsLoaded`
+- [x] Chat store/session state accepts full backend message chain
+- [x] Frontend test coverage for tool-call rendering and active skill highlighting
+- [ ] Structured section-aware rendering beyond markdown headings (deeper adjudication-ready section model)
 
 ---
 
@@ -426,6 +441,10 @@ GET /api/traces                  → list traces
 GET /api/traces/:id              → full trace with spans
 GET /api/sessions/:id/traces     → traces for a session
 ```
+
+Notes:
+- Trace/tool availability is backend-driven (including MCP-backed tools configured in backend `mcp.json`); frontend only renders what backend reports.
+- Frontend does not define or host tools.
 
 #### Enhanced Skills Tab
 
@@ -574,12 +593,15 @@ ChatWindow
   - Result summary shown when expanded
   - Default: collapsed with one-line summary
 - Visual distinction from regular tool calls (e.g. different colour, nested appearance, agent avatar)
+- For background subagents, show lifecycle states: `queued` → `running` → `completed`/`failed`
+- Background runs include a stable run id in UI so teachers/researchers can inspect traces and resume context later
 
 #### Agent Indicator
 
 - Small indicator in the chat showing which agent is currently active
 - For Sprint 7 (subagents only): shows "Planner" with occasional "Resource Creator (working...)" when subagent is active
 - Prepares for Sprint 8 (handoffs) where the active agent changes for the conversation
+- Indicator also shows background activity count when delegated runs continue asynchronously
 
 #### Updated Trace Viewer
 
@@ -606,6 +628,8 @@ Header
 - Subagent block renders when `spawn_subagent` in message chain
 - Collapsed by default, expands to show subagent work
 - Agent indicator shows correct agent
+- Background subagent status transitions render correctly (`queued/running/completed/failed`)
+- Background subagent run id links correctly to trace view
 - Trace viewer shows nested subagent spans
 - Cost rollup correct in trace summary
 

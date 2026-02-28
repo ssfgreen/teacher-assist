@@ -89,7 +89,7 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 - [x] True Anthropic streaming integration.
 - [x] Explicit mock-model behavior (`mock-*`) rather than silent fallback for real models.
 - [x] Real-model missing API key returns explicit configuration error.
-- [x] Session persistence to disk (`packages/backend/.data/store.json`) across backend restarts.
+- [x] Session persistence backed by PostgreSQL across backend restarts.
 - [x] SSE robustness hardening (heartbeat and safe controller-close handling).
 - [x] Optional `maxTokens` request support for `/api/chat` (non-stream and stream paths).
 - [x] Provider smoke test command `bun run smoke:providers` with JSON log output.
@@ -163,7 +163,7 @@ DELETE /api/sessions/:id
 
 - Assemble system prompt in the defined order:
   1. Assistant identity (`soul.md`)
-  2. Agent instructions (hardcoded planner instructions for now — no plugin system yet)
+  2. Agent instructions (hardcoded planner instructions for now — no `agents/` + `skills/` discovery yet)
   3. Workspace context (teacher profile, pedagogy preferences)
   4. (Position 4–5 reserved for memory — Sprint 7)
   5. (Skill manifest — Sprint 3)
@@ -267,6 +267,8 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 - Tool dispatch: given a tool call from the model, find and execute the correct handler
 - Schema generation: produce tool definitions in Anthropic format and OpenAI format
 - Error handling: tool execution errors returned as tool result messages (not thrown)
+- Best-practice separation: tool implementations live in backend code (`packages/backend/src/tools/*`), never inside `skills/`
+- External tool configuration lives in backend-owned `packages/backend/mcp.json` (single source of truth for MCP servers/tools)
 
 #### Built-in Tools (Phase 1 set)
 
@@ -279,11 +281,18 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 
 #### Skills Infrastructure (`tools/skills.ts`)
 
-- Skills directory structure: `plugins/lesson-planning/skills/{skill-name}/SKILL.md` + reference files
+- Skills directory structure: `skills/{skill-name}/SKILL.md` + optional reference files
 - Tier 1 (manifest): Parse all `SKILL.md` frontmatter `description` fields → produce manifest string for system prompt (~100 tokens per skill)
 - Tier 2 (SKILL.md): `read_skill("backward-design")` → returns full SKILL.md content (500–1500 tokens)
 - Tier 3 (reference files): `read_skill("backward-design/examples.md")` → returns reference file content
-- Skill discovery: scan plugin skill directories, build manifest at startup
+- Skill discovery: scan root `skills/` directory at startup and build manifest
+- `SKILL.md` follows Agent Skills conventions (frontmatter + focused usage guidance)
+- Skill reference expansion:
+  - Support inline references like `[skill:backward-design]` and `[skill:backward-design/examples.md]`
+  - Maximum recursive expansion depth default: 5
+  - Circular reference detection with explicit tool error output
+  - Missing referenced skill/file reported without crashing the loop
+- Skill index metadata cached at runtime: `lastAccessedAt`, `accessCount`, optional `contentHash`
 - For MVP, seed with 2–3 skills: use open-source examples or stubs (e.g. a "backward-design" skill with a real SKILL.md and a simple reference file). Full pedagogical skills authored in a later sprint.
 
 #### Agent Loop (`agent.ts`)
@@ -294,9 +303,27 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
   2. Call model with system prompt, messages, tool definitions
   3. If no tool calls: return result with status `success`
   4. If tool calls: execute each, append results to messages, continue loop
-- Status codes: `success`, `error_max_turns`, `error_max_budget`
+- Status codes: `success`, `error_max_turns`, `error_max_budget`, `error_tool_retry_exhausted`, `error_no_progress`
 - `maxTurns` default: 25
+- Loop resilience controls (Nanobot-aligned):
+  - `maxToolRetries` default: 3 per tool call chain
+  - `maxNoProgressIterations` default: 3 (detect repeated non-progressing turns)
+  - `forceFinalizeOnStall` default: true (ask model for final best-effort response when stalling)
 - The agent loop replaces the simple `POST /api/chat` passthrough — chat now goes through the loop
+
+#### Context Maintainer (`context.ts`)
+
+- Introduce an explicit runtime context state (instead of treating `messages` as the only state container):
+  - `history`: validated non-system message timeline
+  - `toolCalls`: pending/completed/failed tool call records
+  - `taskProgress`: active/completed task snapshot
+  - `feedback`: hook outcomes and loop warnings
+  - `contextSummary`: cheap diagnostics for traces/debug (counts, last tool, progress markers)
+- Context maintainer responsibilities:
+  - normalize and validate message/tool transitions per turn
+  - detect stalled loops and repeated tool-failure cycles
+  - prepare model input window while preserving required state
+  - expose summary metrics to traces and API debug payloads
 
 #### Updated System Prompt Assembly
 
@@ -314,16 +341,37 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 - **Unit:** Tool registration, dispatch, schema generation (both provider formats)
 - **Unit:** Skill manifest generation from directory scan
 - **Unit:** `read_skill` returns correct tier content; errors on missing skill
+- **Unit:** Inline skill reference expansion resolves nested references up to depth limit
+- **Unit:** Circular skill references are detected and return safe errors
 - **Unit:** `update_tasks` add/complete/update operations
 - **Unit:** Safety limits (maxTurns triggers `error_max_turns`, maxBudget triggers `error_max_budget`)
+- **Unit:** Context maintainer validates tool lifecycle transitions (pending → completed/failed)
+- **Unit:** No-progress detector triggers `error_no_progress` after configured threshold
+- **Unit:** Tool retry cap triggers `error_tool_retry_exhausted` when repeated failures persist
 - **Integration:** Agent loop with mock model: model calls `read_skill` → gets Tier 2 → calls `read_skill` for Tier 3 → produces final response. Verify full message chain.
 - **Integration:** Agent loop with mock model: model calls `write_file` → file created → model references it in response
 - **Integration:** Tool execution error → returned to model as error message → model recovers
+- **Integration:** Stalled loop enters forced-finalization path when `forceFinalizeOnStall=true`
 - **Integration:** System prompt includes skill manifest at correct position
 
 ### API Summary (changes)
 
 `POST /api/chat` now returns richer response with full message chain and tool usage metadata.
+
+### Sprint 3 Status (Current)
+
+- [x] Tool registry with registration, provider schema generation, and safe dispatch error handling
+- [x] Built-in tools: `read_file`, `write_file`, `str_replace`, `list_directory`, `read_skill`, `update_tasks`
+- [x] Skills infrastructure with tiered `read_skill` behavior and startup manifest generation
+- [x] Seeded MVP skills under `skills/*`
+- [x] `runAgentLoop` with `maxTurns` and `maxBudgetUsd` safety limits and status codes
+- [x] `POST /api/chat` routed through agent loop with full message-chain response (`messages`, `skillsLoaded`)
+- [x] System prompt includes skill manifest and tool instructions
+- [x] `GET /api/skills` for frontend skill manifest rendering
+- [x] Unit coverage for registry/skills/agent safety limits
+- [x] Integration coverage for tool-chain chat response and skills endpoint
+- [x] Real-provider tool-calling adapters now pass tool definitions and parse native tool-call objects (OpenAI/Anthropic)
+- [ ] Integration coverage for `write_file` and tool-error recovery roundtrip via `/api/chat`
 
 ---
 
@@ -333,13 +381,23 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 
 ### Deliverables
 
-#### Plugin Discovery (`plugins.ts`)
+#### Skills + Agents Discovery (`discovery.ts`)
 
-- Scan `plugins/` directory for plugin structure (agents, commands, skills, hooks)
+- Scan workspace root for:
+  - `skills/` (skill definitions)
+  - `agents/` (agent definitions)
 - Parse command markdown frontmatter (agent, description, mode, writes)
-- Parse agent markdown frontmatter (model, provider, workspace, skills, tools, hooks, maxTurns, maxBudgetUsd)
-- Build plugin registry at startup: commands → agents → skills → hooks mapping
-- For MVP: hardcode to `lesson-planning` plugin, but use the discovery infrastructure
+- Parse agent markdown frontmatter (model, provider, workspace, skills, tools, disallowedTools, mcpServers, hooks, maxTurns, maxBudgetUsd, permissionMode)
+
+#### Loop Configuration Surface
+
+- `runAgentLoop` options include:
+  - `maxTurns?: number`
+  - `maxBudgetUsd?: number`
+  - `maxToolRetries?: number`
+  - `maxNoProgressIterations?: number`
+  - `forceFinalizeOnStall?: boolean`
+- Agent frontmatter can optionally override safe defaults for retry/no-progress controls in bounded ranges.
 
 #### Command Routing
 
@@ -355,7 +413,7 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 #### Hook Infrastructure (`hooks.ts`)
 
 - Hook type definitions for each lifecycle point: `preLoop`, `postLoop`, `preModel`, `postModel`, `preTool`, `postTool`
-- Hook resolution: agent definition lists hook names → resolve to implementations in plugin's `hooks/` directory
+- Hook resolution: agent definition lists hook names → resolve to backend implementations in `packages/backend/src/hooks/*`
 - Hook execution: run hooks in order, passing context (messages, tool calls, agent state)
 - Hook abort: any hook can throw `HookAbortError(name, reason)` → terminates agent loop with status `error_hook_abort`
 - All hook executions logged (for traces in Sprint 6)
@@ -400,7 +458,7 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 
 ### Tests
 
-- **Unit:** Plugin discovery parses frontmatter correctly
+- **Unit:** Skills/agents discovery parses frontmatter correctly
 - **Unit:** Command routing resolves agent and framing
 - **Unit:** Hook resolution merges agent hooks and caller hooks in order
 - **Unit:** `HookAbortError` terminates loop with correct status
@@ -472,7 +530,7 @@ Each skill's SKILL.md includes: description (for manifest), overview, when to us
 
 #### Planner Agent Definition
 
-- `plugins/lesson-planning/agents/planner.md` — full agent definition with frontmatter and instruction body
+- `agents/planner.md` — full agent definition with frontmatter and instruction body
 - References all skills, workspace files, tools, and hooks
 - Instructions encode the "draft not decide" stance, skill consultation patterns, artefact bundle structure
 
@@ -510,6 +568,13 @@ GET    /api/sessions/:id/traces
 - Virtual path system: `memory/MEMORY.md`, `memory/classes/3B/MEMORY.md`, etc.
 - Teacher-id isolation: teachers can only access their own memory
 - MEMORY.md discipline: only first 200 lines loaded into system prompt
+- Memory tiers:
+  - Short-term memory: in-session working notes and recent observations
+  - Long-term memory: curated stable preferences/patterns retained across sessions
+- Consolidation policy:
+  - Trigger after session completion (and optionally periodically in long sessions)
+  - Promote short-term items to long-term only when relevance/importance thresholds are met
+  - Keep provenance to session/trace IDs for auditability
 
 #### Memory Tools (`tools/memory.ts`)
 
@@ -521,6 +586,10 @@ GET    /api/sessions/:id/traces
 
 - Position 4: Teacher memory — first 200 lines of `memory/MEMORY.md`
 - Position 5: Class memory — `memory/classes/{classRef}/MEMORY.md` when class identified
+- Memory selection policy under token budget:
+  - Rank candidates by weighted relevance, importance, recency, and access frequency
+  - Always include high-priority teacher/class constraints first
+  - Emit memory-selection summary into traces
 
 #### Memory-Capture Hook (`memory-capture.ts`)
 
@@ -557,13 +626,17 @@ GET    /api/sessions/:id/traces
 - **Unit:** Memory file teacher-id isolation (teacher A cannot read teacher B's memory)
 - **Unit:** MEMORY.md 200-line truncation in prompt assembly
 - **Unit:** `read_memory` and `update_memory` tool handlers
+- **Unit:** Memory ranking scorer returns stable ordering by relevance/importance/recency/access
+- **Unit:** Consolidation promotes only qualifying short-term entries to long-term memory
 - **Unit:** `search_sessions` with keyword, class filter, date range
 - **Unit:** `read_session` returns correct messages
 - **Unit:** Memory events logged for all read/write operations
 - **Integration:** Memory write flow: agent calls `update_memory` → file created/updated → event logged → trace span recorded
 - **Integration:** Memory-capture hook: session completes → proposals generated → teacher confirms → memory written → events logged
+- **Integration:** End-of-session consolidation updates long-term memory with provenance metadata
 - **Integration:** Memory in prompt: create memory for class 3B → start new session referencing 3B → verify class memory in system prompt
 - **Integration:** Feedforward with memory: memory exists for class → feedforward surfaces it → teacher confirms → generation uses it
+- **Integration:** Prompt memory selection respects token budget while retaining highest-priority constraints
 - **Integration:** Session search: create sessions with known content → search finds them → `read_session` loads correct one
 - **Integration:** `--no-memory` flag disables memory loading and memory tools
 
@@ -583,12 +656,20 @@ POST   /api/chat/memory-response
 
 **Goal:** The planner agent can spawn subagents to handle specific sub-tasks (e.g. worksheet creation, quiz generation). Subagents run in isolated context and return summaries.
 
+Guideline: use skills for static guidance/references and subagents for autonomous, bounded work that benefits from separate reasoning context.
+
 ### Deliverables
 
 #### Subagent Infrastructure (`tools/subagent.ts`)
 
 - `spawn_subagent` tool: agent specifies subagent name, task description, and optional context
-- Subagent resolution: look up agent definition by name in plugin's `agents/` directory
+- Subagent resolution: look up agent definition by name in root `agents/` directory
+- Agent definition schema aligns with modern sub-agent patterns:
+  - `description` (used by planner to delegate automatically)
+  - `tools` and `disallowedTools` capability controls
+  - `model`, `maxTurns`, `permissionMode`
+  - `mcpServers` allowlist for external tool exposure per subagent
+  - `hooks`, `memory` and `isolation` flags where needed
 - Isolated execution:
   - Fresh message history (no parent conversation)
   - Subagent receives: its own system prompt (with soul.md identity), the task description, and optional context from parent
@@ -598,6 +679,10 @@ POST   /api/chat/memory-response
   - No access to parent's conversation history
 - Depth cap: subagents cannot spawn further subagents (depth = 1)
 - Subagents cannot perform handoffs
+- Foreground/background execution modes:
+  - Foreground: parent waits for completion and receives immediate result
+  - Background: returns subagent run id, parent can continue and later query/resume by id
+- Automatic delegation support: planner can choose subagents by matching task intent to subagent `description`
 - Result: subagent's final response returned as a tool result to the parent agent
 - The result includes a summary of decisions made and any files created
 
@@ -608,9 +693,9 @@ POST   /api/chat/memory-response
 
 #### Phase 2 Agent Definitions
 
-- `plugins/lesson-planning/agents/pedagogy-reviewer.md` — reviews lesson plans for pedagogical soundness
-- `plugins/lesson-planning/agents/resource-creator.md` — creates worksheets, revision guides, quiz materials
-- `plugins/lesson-planning/agents/differentiation-specialist.md` — reviews and enhances differentiation strategies
+- `agents/pedagogy-reviewer.md` — reviews lesson plans for pedagogical soundness
+- `agents/resource-creator.md` — creates worksheets, revision guides, quiz materials
+- `agents/differentiation-specialist.md` — reviews and enhances differentiation strategies
 
 Each agent has its own skills, tools, and hooks configuration. All share `soul.md` identity.
 
@@ -619,6 +704,7 @@ Each agent has its own skills, tools, and hooks configuration. All share `soul.m
 - Subagent invocations logged as child spans within parent trace
 - Child span includes: subagent name, task, messages, tool calls, usage, duration
 - Parent trace aggregates total cost including subagent costs
+- Background subagents produce incremental trace updates and completion status events
 
 #### Updated Planner Agent
 
@@ -773,6 +859,8 @@ The frontend should render subagent spans in the chat as collapsible sections sh
 ### Error Handling Strategy
 
 - Tool errors → returned to model as tool result messages (model reasons about them)
+- Repeated tool failures beyond `maxToolRetries` → terminate with `error_tool_retry_exhausted`
+- Repeated no-progress iterations beyond `maxNoProgressIterations` → terminate with `error_no_progress` or force-finalize when enabled
 - Hook aborts → terminate loop, return `error_hook_abort` with reason
 - Model API errors → retry with exponential backoff (max 3 retries), then return error
 - Database errors → log and return 500 with generic message

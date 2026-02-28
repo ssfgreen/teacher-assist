@@ -7,15 +7,17 @@
 - `packages/backend`: Auth, chat, sessions, workspace APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session sidebar, workspace editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 + Sprint 1 + Sprint 2 with several hardening additions.
+The current implementation is Sprint 0 + Sprint 1 + Sprint 2 plus Sprint 3 foundations (skills + agentic tool loop).
 
 ## Backend Runtime
 
 The backend runtime is a NestJS application (`@nestjs/core` + Express adapter) with domain-focused controllers/services under `packages/backend/src/modules/*`.
+Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit entities under `src/typeorm/entities`.
 
 - `AuthController` / `AuthService`
 - `ChatController` / `ChatService`
 - `SessionsController` / `SessionsService`
+- `SkillsController` / `SkillsService`
 - `WorkspaceController` / `WorkspaceService`
 
 ### Auth
@@ -29,14 +31,14 @@ The backend runtime is a NestJS application (`@nestjs/core` + Express adapter) w
 
 ### Chat
 
-`POST /api/chat` supports two modes and now injects workspace-derived system context:
+`POST /api/chat` supports two modes, injects workspace-derived system context, and now runs through an agent loop:
 
-- Non-stream mode: returns JSON `{ response, sessionId, workspaceContextLoaded }`.
+- Non-stream mode: returns JSON `{ response, sessionId, messages, skillsLoaded, workspaceContextLoaded }`.
 - Stream mode (`stream: true`): returns SSE with events:
   - `start`
   - `delta`
   - `ping`
-  - `done` (includes `workspaceContextLoaded`)
+  - `done` (includes full response payload above)
   - `error`
 
 `POST /api/chat` accepts optional `maxTokens` and `classRef`, and forwards provider-appropriate token limit fields.
@@ -45,12 +47,28 @@ System prompt assembly order:
 1. `<assistant-identity>` from workspace `soul.md` (with default fallback)
 2. `<agent-instructions>` static planner instructions
 3. `<workspace-context>` from teacher/pedagogy plus detected class/curriculum files
+4. `<skill-manifest>` from discovered skills folder
+5. `<tool-instructions>` generated from tool registry
+
+Agent loop behavior:
+
+- `runAgentLoop` calls model repeatedly until no tool calls are returned.
+- Built-in tools are dispatched via `tools/registry.ts`.
+- Safety limits enforced: `maxTurns` and `maxBudgetUsd`.
+- Tool results are stored as `role: "tool"` messages and persisted to sessions.
+- Context is maintained by an explicit runtime context state (history, tool lifecycle, task progress, feedback, summary metrics).
+- Loop resilience controls prevent unproductive cycles:
+  - per-chain tool retry cap (`maxToolRetries`)
+  - no-progress iteration cap (`maxNoProgressIterations`)
+  - optional forced finalization path (`forceFinalizeOnStall`) for best-effort completion.
 
 Provider integration:
 
 - OpenAI: non-stream + true stream.
 - Anthropic: non-stream + true stream.
 - Mock models (`mock-*`): deterministic fake output for local testing.
+- Mock agentic models (`mock-agentic-*`): deterministic tool-call sequences for Sprint 3 loop testing.
+- Real-provider non-stream requests now include tool definitions, and native tool calls are parsed back into internal `toolCalls`.
 
 Real model calls require provider API keys; missing keys return explicit config errors.
 
@@ -63,16 +81,16 @@ Real model calls require provider API keys; missing keys return explicit config 
   - `PUT /api/sessions/:id`
   - `DELETE /api/sessions/:id`
 - Session ownership is enforced per teacher.
+- Session records now include persisted task state (`tasks`) used by `update_tasks`.
 
 Persistence strategy:
 
-- Teachers and sessions are persisted to disk at `packages/backend/.data/store.json`.
-- This enables persistence across backend restarts.
+- Teachers and sessions are persisted in PostgreSQL (`teachers`, `sessions`) via TypeORM-backed repositories.
 - Auth tokens and rate-limit counters remain in-memory.
 
 ### Workspace
 
-- Workspace files are persisted in PostgreSQL (`workspace_files` table) keyed by `teacher_id` and `path`.
+- Workspace files are persisted in PostgreSQL (`workspace_files` table) keyed by `(teacher_id, path)` with `teacher_id` as UUID FK to `teachers(id)`.
 - Backend startup requires PostgreSQL workspace storage to be reachable and migrated (`bun run migrate`).
 - Defaults are seeded on login / first access:
   - `soul.md`
@@ -86,7 +104,24 @@ Persistence strategy:
   - `GET /api/workspace/*path`
   - `PUT /api/workspace/*path`
   - `DELETE /api/workspace/*path` (`soul.md` protected)
-  - `POST /api/workspace/seed`
+- `POST /api/workspace/seed`
+
+### Skills
+
+- Skills are discovered from `/skills/{skillName}`.
+- `SKILL.md` frontmatter `description` fields are used to build Tier 1 manifest.
+- `read_skill` supports:
+  - Tier 2: `skill-name` -> `SKILL.md`
+  - Tier 3: `skill-name/file.md` -> referenced file content
+- Skill references can be expanded recursively with depth and circular-reference guards.
+- Endpoint:
+  - `GET /api/skills` (authenticated) returns manifest for frontend `Skills` tab.
+
+### Planned Memory Runtime Enhancements
+
+- Introduce short-term vs long-term memory handling with end-of-session consolidation.
+- Rank retrieved memory snippets by relevance, importance, recency, and access frequency before prompt injection.
+- Persist memory selection and consolidation decisions into traces for observability.
 
 ### Stability Notes
 
@@ -146,11 +181,14 @@ Single-page React app with Zustand state stores.
   - auth/chat error handling,
   - workspace tab open/read flow,
   - classRef propagation,
-  - context indicator rendering.
+  - context indicator rendering,
+  - tool-call timeline rendering,
+  - active-skill highlighting in the `Skills` tab.
 
 ## Key Engineering Decisions
 
 - Keep mock mode explicit by model selection rather than silent fallback.
+- Keep Sprint 3 tool execution transparent by returning and rendering the full message chain.
 - Stream by default in UI for better response UX.
-- Persist sessions on disk now for reliability in local/dev workflows.
+- Persist sessions in PostgreSQL for reliability and cross-process consistency.
 - Maintain non-stream chat path for compatibility and simpler fallback behavior.

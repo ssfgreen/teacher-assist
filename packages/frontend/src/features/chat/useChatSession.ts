@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { sendChatStream } from "../../api/chat";
-import type { ChatMessage, SessionRecord } from "../../types";
+import type { ChatMessage, ChatTrace, SessionRecord } from "../../types";
 
 interface UseChatSessionParams {
   currentSession: SessionRecord | null;
@@ -22,11 +22,22 @@ export function useChatSession({
   upsertCurrentSession,
   refreshSessions,
 }: UseChatSessionParams) {
+  const currentSessionId = currentSession?.id ?? null;
+  const previousSessionIdRef = useRef<string | null>(currentSessionId);
   const [messageInput, setMessageInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [lastContextPaths, setLastContextPaths] = useState<string[]>([]);
+  const [activeSkills, setActiveSkills] = useState<string[]>([]);
+  const [traceHistory, setTraceHistory] = useState<ChatTrace[]>([]);
   const [contextExpanded, setContextExpanded] = useState(false);
+
+  useEffect(() => {
+    if (previousSessionIdRef.current !== currentSessionId) {
+      setTraceHistory([]);
+      previousSessionIdRef.current = currentSessionId;
+    }
+  });
 
   const sendMessage = async () => {
     const content = messageInput.trim();
@@ -91,15 +102,14 @@ export function useChatSession({
         ...streamBaseSession,
         id: response.sessionId,
         updatedAt: new Date().toISOString(),
-        messages: [
-          ...nextMessages,
-          {
-            role: "assistant",
-            content: response.response.content,
-          },
-        ],
+        messages: response.messages,
       });
       setLastContextPaths(response.workspaceContextLoaded ?? []);
+      setActiveSkills(response.skillsLoaded ?? []);
+      if (response.trace) {
+        const trace = response.trace;
+        setTraceHistory((previous) => [trace, ...previous]);
+      }
       setMessageInput("");
       await refreshSessions();
     } catch (error) {
@@ -119,6 +129,8 @@ export function useChatSession({
     contextExpanded,
     setContextExpanded,
     lastContextPaths,
+    activeSkills,
+    traceHistory,
     sendMessage,
   };
 }

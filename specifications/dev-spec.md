@@ -255,6 +255,16 @@ teacher-assist/
 
 The agent loop is the core runtime. It takes an agent definition, optional command framing, user input, and available tools, then runs a model-tool cycle until the model responds without tool calls or a safety limit is reached.
 
+`runAgentLoop` is backed by a first-class context maintainer that owns loop state and diagnostics, rather than using raw message arrays as the only state carrier.
+
+#### Context object contract
+
+- `history`: validated chat/tool message sequence used for model calls
+- `toolCalls`: per-call lifecycle state (`pending | completed | failed`) with retry counts
+- `taskProgress`: structured task-state snapshot for `update_tasks`
+- `feedback`: hook outputs, loop warnings, and guardrail notes
+- `contextSummary`: compact counters and progress markers for traces/debug payloads
+
 **Behaviour:**
 
 1. Resolve and merge hooks from the agent definition and any caller-provided hooks
@@ -263,17 +273,20 @@ The agent loop is the core runtime. It takes an agent definition, optional comma
 4. Load session messages if resuming, append the new user input
 5. Enter the loop:
    - Check safety limits (maxTurns, maxBudgetUsd). Return error status if exceeded
+   - Check loop resilience limits (`maxToolRetries`, `maxNoProgressIterations`)
    - Run **preModel** hooks
    - Call the model with system prompt, messages, and tool definitions
    - Run **postModel** hooks
    - Record token usage and cost in the trace
+   - Update context summary and progress markers
    - If no tool calls in response: run **postLoop** hooks (including **reflection prompt**, **teacher adjudication gate**, and **memory-capture**), persist session and trace, return result
    - If tool calls: for each call, run **preTool** hooks, execute the tool, run **postTool** hooks, append result to messages
+   - If stalled/no-progress and `forceFinalizeOnStall=true`, request a final best-effort response and terminate safely
 6. If a hook abort error is thrown at any point, write the trace and return with abort status and reason
 
 **Error handling:** Tool execution errors are caught and returned as tool result messages so the model can reason about them. Hook abort errors are the only exception type that terminates the loop.
 
-**Status codes:** `success`, `error_max_turns`, `error_max_budget`, `error_hook_abort`
+**Status codes:** `success`, `error_max_turns`, `error_max_budget`, `error_hook_abort`, `error_tool_retry_exhausted`, `error_no_progress`
 
 ### Hooks
 
@@ -296,7 +309,7 @@ Hooks are lifecycle callbacks that run at defined points in the agent loop. They
 
 **Abort behaviour:** Any hook may throw a hook abort error with a name and reason. This immediately terminates the agent loop and returns an error result.
 
-**Hook resolution:** An agent definition lists hook names. The runtime resolves these to hook implementations from the plugin's `hooks/` directory. Caller-provided hooks are merged and run after agent-defined hooks.
+**Hook resolution:** An agent definition lists hook names. The runtime resolves these to backend hook implementations (`packages/backend/src/hooks/*`). Caller-provided hooks are merged and run after agent-defined hooks.
 
 **Trace integration:** Every hook execution is recorded as a span in the trace.
 
@@ -359,6 +372,13 @@ Three tiers, matching the Claude Code and Anthropic Agent SDK architecture. Each
 **Tier 2 — SKILL.md (loaded on first relevance):** Overview, when to use it, key concepts, and pointers to Tier 3 files. 500–1500 tokens. Loaded via `read_skill <name>`.
 
 **Tier 3 — Reference files (loaded on demand):** Full frameworks, worked examples, rubrics, strategy lists, curriculum mappings. Loaded via `read_skill <name>/<filename>`.
+
+**Reference expansion and safety:**
+
+- Skill content can reference additional skill files via inline tokens (e.g. `[skill:backward-design]`, `[skill:backward-design/examples.md]`)
+- Recursive expansion uses a bounded depth (`maxReferenceDepth`, default 5)
+- Circular references are detected and returned as safe tool errors
+- Missing referenced files are reported in-context without crashing the loop
 
 This implements product spec §3.3: domain knowledge lives in the system, not in the prompt.
 
@@ -425,6 +445,18 @@ Both mechanisms follow the same anonymisation principles as workspace: memory re
 Teachers can review and edit memory files via the workspace sidebar in the web UI. Memory files appear alongside workspace files but are visually distinguished. The `read_memory` and `update_memory` tools give the agent access during sessions.
 
 **MEMORY.md discipline:** Following the Claude Code pattern, MEMORY.md acts as a concise index. The agent is instructed to keep it under 200 lines by moving detailed notes into topic files. Content beyond 200 lines in MEMORY.md is not loaded at startup.
+
+**Consolidation policy (Nanobot-aligned):**
+
+- Maintain short-term memory during a session and promote to long-term memory at session end
+- Promotion uses scored thresholds across relevance, importance, recency, and reinforcement frequency
+- Consolidation writes retain provenance (`session_id`, `trace_id`) for auditability and research analysis
+
+**Retrieval policy:**
+
+- Memory retrieval for prompt injection uses weighted ranking: relevance > importance > recency > access count
+- Under token limits, highest-priority constraints are included first (e.g. safeguarding, class-specific needs)
+- Selection decisions are logged in traces for transparency/evaluation
 
 ### Subagents (Phase 2)
 
@@ -709,6 +741,7 @@ Fast, deterministic. Run on every commit.
 
 - Frontmatter parsing (all fields, defaults, validation — including `memory` field)
 - Tool execution (file tools, read_skill tiers, update_tasks, read_memory, update_memory, search_sessions, read_session)
+- Tool retry and no-progress detectors (`maxToolRetries`, `maxNoProgressIterations`, `forceFinalizeOnStall`)
 - System prompt assembly (ordering, XML sections, manifest content, identity at position 1, teacher memory at position 4, class memory at position 5)
 - Session persistence (save/load round-trip, adjudication + feedforward + memory-capture decisions preserved)
 - Trace structure (sessionId, span types, adjudication + feedforward + reflection + memory event data)
@@ -717,6 +750,8 @@ Fast, deterministic. Run on every commit.
 - Curriculum evidence parsing (evidence pointers, file validation)
 - Memory file CRUD (create, read, update, scope isolation, teacher-id isolation)
 - Memory MEMORY.md truncation (only first 200 lines loaded into prompt)
+- Memory ranking score and deterministic ordering under token budget
+- Memory consolidation thresholding (short-term → long-term promotion)
 - Session search (full-text search, class filter, date range filter)
 
 ### Integration Tests (Layer 2)
@@ -725,9 +760,12 @@ Mock model with scripted responses. Real tools against temp filesystem and test 
 
 - Basic loop (tool call → execute → respond → terminate)
 - Skill loading flow (Tier 2 → Tier 3 escalation, traced)
+- Skill reference expansion flow (inline references, bounded recursion, circular detection)
 - Memory loading flow (teacher MEMORY.md in prompt, class MEMORY.md loaded by feedforward, topic files via read_memory)
 - Memory write flow (agent update_memory → trace event, memory-capture hook → teacher confirmation → write + trace event)
+- Memory consolidation flow (end-of-session promotion with provenance in trace)
 - Safety limits (maxTurns, maxBudget)
+- Stall/retry resilience (repeated tool failures and no-progress loops terminate with correct status)
 - Hook lifecycle (all points fire correctly, all appear in trace)
 - Hook abort (terminates, trace written, correct status)
 - Feedforward hook (surfaces workspace + memory context, logs teacher response)
@@ -798,7 +836,6 @@ Everything listed in product spec "In scope":
 
 ### Out of Scope for MVP
 
-- Plugin discovery system (hardcode single plugin)
 - Subagents and handoffs (Phase 2)
 - Update-memory plugin (researcher updates workspace manually)
 - MCP integration

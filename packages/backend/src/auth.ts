@@ -22,7 +22,7 @@ export async function seedDefaultTeacher(): Promise<void> {
     return;
   }
 
-  const existing = getTeacherByEmail(DEFAULT_EMAIL);
+  const existing = await getTeacherByEmail(DEFAULT_EMAIL);
   if (existing) {
     seeded = true;
     return;
@@ -36,7 +36,7 @@ export async function seedDefaultTeacher(): Promise<void> {
     passwordHash,
   };
 
-  upsertTeacher(teacher);
+  await upsertTeacher(teacher);
   seeded = true;
 }
 
@@ -44,7 +44,7 @@ export async function login(
   email: string,
   password: string,
 ): Promise<{ token: string; teacher: Omit<Teacher, "passwordHash"> } | null> {
-  const teacher = getTeacherByEmail(email);
+  const teacher = await getTeacherByEmail(email);
   if (!teacher) {
     return null;
   }
@@ -65,16 +65,9 @@ export async function login(
   };
 }
 
-export function authenticateFromRequest(
-  request: Request,
-): Omit<Teacher, "passwordHash"> | null {
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  return authenticateFromCookieHeader(cookieHeader);
-}
-
-export function authenticateFromCookieHeader(
+export async function authenticateFromCookieHeader(
   cookieHeader: string,
-): Omit<Teacher, "passwordHash"> | null {
+): Promise<Omit<Teacher, "passwordHash"> | null> {
   const token = readCookie(cookieHeader, AUTH_COOKIE);
   if (!token) {
     return null;
@@ -85,7 +78,7 @@ export function authenticateFromCookieHeader(
     return null;
   }
 
-  const teacher = getTeacherById(teacherId);
+  const teacher = await getTeacherById(teacherId);
   if (!teacher) {
     return null;
   }
@@ -95,11 +88,6 @@ export function authenticateFromCookieHeader(
     email: teacher.email,
     name: teacher.name,
   };
-}
-
-export function logoutFromRequest(request: Request): void {
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  logoutFromCookieHeader(cookieHeader);
 }
 
 export function logoutFromCookieHeader(cookieHeader: string): void {

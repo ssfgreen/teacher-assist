@@ -1,6 +1,7 @@
 import * as authApi from "../api/auth";
 import * as chatApi from "../api/chat";
 import * as sessionsApi from "../api/sessions";
+import * as skillsApi from "../api/skills";
 import * as workspaceApi from "../api/workspace";
 import { useAuthStore } from "../stores/authStore";
 import { useSessionStore } from "../stores/sessionStore";
@@ -130,6 +131,23 @@ export function setupDefaultMocks(): void {
     toPath: "classes/3B/CLASS-RENAMED.md",
     renamedCount: 1,
   });
+  vi.mocked(skillsApi.listSkills).mockResolvedValue({
+    skills: [
+      {
+        name: "backward-design",
+        description: "Design lessons from outcomes to evidence to activities.",
+      },
+      {
+        name: "differentiation",
+        description: "Plan supports and challenge pathways.",
+      },
+    ],
+  });
+  vi.mocked(skillsApi.readSkill).mockResolvedValue({
+    target: "backward-design",
+    tier: 2,
+    content: "# Backward Design\n\nSkill file content.",
+  });
 
   vi.mocked(chatApi.sendChatStream).mockImplementation(
     async (_params, onDelta) => {
@@ -137,6 +155,19 @@ export function setupDefaultMocks(): void {
       onDelta("world");
       return {
         sessionId: "s1",
+        messages: [
+          { role: "user", content: "Plan loops" },
+          { role: "assistant", content: "Hello world" },
+        ],
+        skillsLoaded: [],
+        trace: {
+          id: "trace-1",
+          createdAt: "2026-02-28T00:00:00.000Z",
+          systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+          estimatedPromptTokens: 42,
+          status: "success",
+          steps: [],
+        },
         workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
         response: {
           content: "Hello world",
