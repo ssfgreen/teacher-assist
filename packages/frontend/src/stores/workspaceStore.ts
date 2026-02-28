@@ -57,6 +57,13 @@ function mapRenamedPath(
   return `${toPrefix}${suffix}`;
 }
 
+async function fetchWorkspaceSnapshot(): Promise<{
+  tree: WorkspaceNode[];
+  classRefs: string[];
+}> {
+  return listWorkspace();
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   tree: [],
   classRefs: [],
@@ -74,7 +81,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   initialise: async () => {
     set({ loading: true, error: null });
     try {
-      const data = await listWorkspace();
+      const data = await fetchWorkspaceSnapshot();
       set({
         tree: data.tree,
         classRefs: data.classRefs,
@@ -92,7 +99,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await seedWorkspace();
-      const data = await listWorkspace();
+      const data = await fetchWorkspaceSnapshot();
       set({
         tree: data.tree,
         classRefs: data.classRefs,
@@ -161,7 +168,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ saving: true, error: null });
     try {
       await writeWorkspaceFile(path, get().openFileContent);
-      const data = await listWorkspace();
+      const data = await fetchWorkspaceSnapshot();
       set({
         tree: data.tree,
         classRefs: data.classRefs,
@@ -180,7 +187,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await writeWorkspaceFile(path, content);
-      const data = await listWorkspace();
+      const data = await fetchWorkspaceSnapshot();
       const file = await readWorkspaceFile(path);
       set({
         tree: data.tree,
@@ -202,7 +209,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await deleteWorkspaceFile(path);
-      const data = await listWorkspace();
+      const data = await fetchWorkspaceSnapshot();
       const shouldClose = get().openFilePath === path;
       set({
         tree: data.tree,
@@ -224,7 +231,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await renameWorkspacePath(fromPath, toPath);
-      const data = await listWorkspace();
+      const data = await fetchWorkspaceSnapshot();
       const currentOpenPath = get().openFilePath;
       const nextOpenPath = currentOpenPath
         ? mapRenamedPath(currentOpenPath, fromPath, toPath)

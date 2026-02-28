@@ -2,7 +2,7 @@
 
 ## Overview
 
-`teacher-assist` is a monorepo with a Bun backend and a Vite/React frontend.
+`teacher-assist` is a monorepo with a NestJS backend (running on Bun) and a Vite/React frontend.
 
 - `packages/backend`: Auth, chat, sessions, workspace APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session sidebar, workspace editor, model selection, streamed response rendering.
@@ -11,7 +11,12 @@ The current implementation is Sprint 0 + Sprint 1 + Sprint 2 with several harden
 
 ## Backend Runtime
 
-The backend is a Bun HTTP server exposing `/api/*` routes.
+The backend runtime is a NestJS application (`@nestjs/core` + Express adapter) with domain-focused controllers/services under `packages/backend/src/modules/*`.
+
+- `AuthController` / `AuthService`
+- `ChatController` / `ChatService`
+- `SessionsController` / `SessionsService`
+- `WorkspaceController` / `WorkspaceService`
 
 ### Auth
 
@@ -75,7 +80,7 @@ Persistence strategy:
   - `pedagogy.md`
   - `classes/README.md`
   - `curriculum/README.md`
-- Class profiles are expected at `classes/{classRef}/PROFILE.md`.
+- Class profiles are expected at `classes/{classRef}/CLASS.md`.
 - Endpoints:
   - `GET /api/workspace`
   - `GET /api/workspace/*path`

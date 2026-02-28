@@ -5,6 +5,7 @@ Monorepo scaffold for the `teacher-assist` research prototype.
 This repository currently includes Sprint 0, Sprint 1, and Sprint 2:
 - Monorepo workspaces (`packages/backend`, `packages/frontend`)
 - Bun + TypeScript setup
+- NestJS backend module architecture (controllers/services)
 - Biome lint/format setup
 - PostgreSQL Docker setup
 - Backend auth/chat/session APIs
@@ -211,7 +212,7 @@ If you switch computers or recreate Docker volumes, rerun the migration command 
 
 ## Project Structure
 
-- `packages/backend`: Bun + TS backend scaffold
+- `packages/backend`: NestJS-on-Bun backend
 - `packages/frontend`: Vite + React + TS frontend scaffold
 - `specifications/`: product and engineering specifications
 - `plugins/lesson-planning`: plugin content and skills

@@ -230,6 +230,18 @@ App
 - Class selector populates from workspace classes
 - Context indicator shows when workspace files used in response
 
+### Sprint 2.5 - Frontend Maintainability Refactor
+
+**Goal:** Reduce frontend file sprawl and make feature behaviour easier to evolve safely.
+
+### Status (Implemented 2026-02-28)
+
+- [x] Split `App.tsx` into feature-focused modules (`auth`, `chat`, `workspace`)
+- [x] Extract chat orchestration into `useChatSession` hook
+- [x] Extract workspace path/tree helpers into dedicated utilities/components
+- [x] Split frontend integration tests by domain (`app.auth-chat`, `app.sessions`, `app.workspace`) with shared fixtures
+- [x] Preserve existing user-facing behaviour and route/API contracts
+
 ---
 
 ## Sprint 3 — Tool Use Rendering + Skill Visibility

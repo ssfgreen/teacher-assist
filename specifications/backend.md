@@ -204,6 +204,57 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 
 ---
 
+## Sprint 2.5 - Backend Maintainability Refactor
+
+**Goal:** Reduce backend file sprawl and improve testability by moving API logic to NestJS controllers/services.
+
+### Status (Implemented 2026-02-28)
+
+- [x] Migrate backend runtime to NestJS (`@nestjs/core`, `@nestjs/platform-express`)
+- [x] Split API concerns into domain modules under `src/modules/*`:
+  - `auth`
+  - `chat`
+  - `sessions`
+  - `workspace`
+- [x] Keep existing route contracts (`/api/auth/*`, `/api/chat`, `/api/sessions/*`, `/api/workspace*`)
+- [x] Move integration tests and smoke script to run against the real Nest HTTP server path
+- [x] Keep core domain logic in existing modules (`auth.ts`, `store.ts`, `workspace.ts`, `model.ts`, `prompt.ts`)
+
+### Notes
+
+- This refactor is architectural (runtime wiring and API composition) and intentionally keeps behaviour stable.
+- Current test failures in CI/sandbox remain tied to missing PostgreSQL workspace storage, not NestJS routing behaviour.
+
+## Sprint 2.6 - Backend Domain Module Decomposition
+
+**Goal:** Reduce oversized backend core files while preserving behaviour and API contracts.
+
+### Status (Implemented 2026-02-28)
+
+- [x] Split `workspace.ts` internals into focused modules:
+  - `workspace/defaults.ts`
+  - `workspace/path.ts`
+  - `workspace/tree.ts`
+  - `workspace/repository.ts`
+  - `workspace/types.ts`
+- [x] Keep `workspace.ts` as a stable façade exporting existing public functions
+- [x] Split `model.ts` internals into provider-specific modules:
+  - `model/providers/openai.ts`
+  - `model/providers/anthropic.ts`
+  - `model/mock.ts`
+  - `model/shared.ts`
+- [x] Keep `model.ts` public API stable (`callModel`, `streamModel`, provider assertion)
+- [x] Split `store.ts` internals into domain-focused modules:
+  - `store/persistence.ts`
+  - `store/sessions.ts`
+  - `store/teachers.ts`
+  - `store/auth-tokens.ts`
+  - `store/rate-limit.ts`
+  - `store/state.ts`
+- [x] Keep `store.ts` public API and persisted store format stable
+
+---
+
 ## Sprint 3 — Skills + Agentic Tool Loop
 
 **Goal:** The planner agent has access to tools and skills. The core agent loop (`runAgentLoop`) executes tool-use cycles until the model stops calling tools or a safety limit is reached. Skills are loaded progressively across three tiers.

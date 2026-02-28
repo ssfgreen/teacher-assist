@@ -19,7 +19,7 @@ The runtime is a tool-use loop. The real value lives in markdown definitions and
                          │  HTTP/WebSocket
               ┌──────────▼──────────┐
               │   Backend Server    │
-              │   (Bun + TypeScript)│
+              │ (NestJS on Bun/TS)  │
               └──────────┬──────────┘
                          │
               ┌──────────▼──────────┐

@@ -10,6 +10,16 @@ There are four documents
 - frontend.md is a list of frontend tasks loosely structured around different sprints
 - backend.md is a list of backend tasks
 
+## Code Quality and Refactoring
+
+- Refactor continuously as you go — do not let files grow unwieldy.
+- Write tests before you refactor to ensure that the critical path doesn't break.
+- If a file exceeds ~300 lines, proactively split it into smaller, well-named modules with clear responsibilities.
+- Extract repeated logic into shared utilities or helpers rather than duplicating code.
+- Each module/file should have a single clear purpose. If you find yourself adding unrelated functionality, create a new file.
+- When adding features to an existing file, first assess whether the file needs restructuring before adding more code.
+- Prefer many small, focused files over few large ones.
+
 ## Verification steps
 
 - Tests: Ensure critical path is always tested
