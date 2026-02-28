@@ -214,5 +214,5 @@ If you switch computers or recreate Docker volumes, rerun the migration command 
 ## Current Limitations
 
 - Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
-- Workspace editor now uses CodeMirror for markdown editing
+- Workspace editor now uses Milkdown (Crepe) for markdown editing
 - Teachers/sessions are still persisted in local store JSON; workspace requires PostgreSQL

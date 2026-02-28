@@ -152,7 +152,7 @@ App
 - [x] Class selector populated from workspace classes and sent as `classRef`
 - [x] Context indicator for `workspaceContextLoaded` metadata on chat responses
 - [x] Frontend tests for workspace read flow, classRef propagation, and context indicator rendering
-- [x] Markdown editor integration (CodeMirror-based workspace editing)
+- [x] Markdown editor integration (Milkdown-based workspace editing)
 
 ### Deliverables
 

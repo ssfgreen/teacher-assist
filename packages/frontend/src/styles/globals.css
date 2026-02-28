@@ -13,11 +13,16 @@ body {
   background: #f7f5f0;
 }
 
-.workspace-editor .cm-editor {
+.workspace-editor .milkdown {
   height: 100%;
 }
 
-.workspace-editor .cm-scroller {
+.workspace-editor .milkdown .editor {
+  height: 100%;
+  overflow: auto;
+}
+
+.workspace-editor .milkdown .ProseMirror {
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.75rem;
