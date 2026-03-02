@@ -512,6 +512,69 @@ ChatWindow
 
 ---
 
+## Sprint 5.1 — Preference Memory UX Rework
+
+**Goal:** Show memory updates only when genuinely new preferences are learned. Present proposals in teacher-meaningful categories: personal, pedagogical, and class-based.
+
+### Status (Planned)
+
+- [ ] Category-grouped memory proposal UI designed and implemented
+- [ ] `no_new_memory` backend status handled with zero UI interruption
+- [ ] Proposal evidence snippets added to build teacher trust
+- [ ] Memory store updated for category-aware proposal state
+
+### Deliverables
+
+#### Category-Grouped Proposal Card
+
+- Replace flat memory proposal list with grouped sections:
+  - **Personal Preferences**
+  - **Pedagogical Preferences**
+  - **Class-Based Learnings** (grouped by class where relevant)
+- Each proposal card includes:
+  - proposed statement (editable)
+  - category badge
+  - scope badge (`Teacher` or `Class: <id>`)
+  - short evidence snippet ("Seen in this exchange")
+  - actions: Confirm / Edit / Dismiss
+
+#### No-New-Memory UX (Default Silent Path)
+
+- When backend returns `status: 'no_new_memory'`:
+  - do not render memory-capture card
+  - keep chat flow in `idle` after response
+  - optional subtle trace text in developer/research mode only
+
+#### Feedforward Memory Presentation
+
+- Feedforward memory block grouped by category labels so teachers can quickly verify:
+  - personal working preferences
+  - pedagogical stance
+  - class-specific constraints/strategies
+- Hide empty categories to reduce noise.
+
+#### State/Store Updates
+
+- Extend `useMemoryStore` proposal model with:
+  - `category`
+  - `scope`
+  - `classId?`
+  - `evidenceSnippet`
+- Add explicit handling for:
+  - `awaiting_memory_capture`
+  - `no_new_memory`
+
+### Tests
+
+- Category sections render only when proposals exist in that category
+- Proposal cards show category + scope + evidence
+- `status: 'no_new_memory'` does not render memory-capture UI
+- Confirm/edit/dismiss still posts correct payload to `/api/chat/memory-response`
+- Class-based proposals grouped by class in UI
+- Feedforward memory view hides empty categories
+
+---
+
 ## Spring 5.5 - Updating UI
 
 The sidebar shouldn't use tabs, it should be structured as:

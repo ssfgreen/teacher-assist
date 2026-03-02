@@ -7,10 +7,11 @@ import { runAgentLoop, runAgentLoopStreaming } from "../../agent";
 import { throwApiError } from "../../common/api-error";
 import {
   type MemoryProposal,
-  buildMemoryCaptureProposals,
+  appendCategorizedMemoryEntry,
   loadMemoryContext,
-  upsertMemoryFile,
 } from "../../memory";
+import type { MemoryCategory } from "../../memory-format";
+import { extractNovelMemoryProposals } from "../../memory-preferences";
 import { ModelConfigurationError, assertValidProvider } from "../../model";
 import { DEFAULT_AGENT_INSTRUCTIONS, assembleSystemPrompt } from "../../prompt";
 import {
@@ -41,6 +42,7 @@ export interface MemoryResponseBody {
     decision: "confirm" | "dismiss";
     scope: "teacher" | "class";
     classId?: string;
+    category?: MemoryCategory;
   }>;
 }
 
@@ -51,7 +53,7 @@ interface ChatResultPayload {
     usage: TokenUsage;
     stopReason: "stop" | "error";
   };
-  status: "success" | "awaiting_memory_capture";
+  status: "success" | "awaiting_memory_capture" | "no_new_memory";
   proposals?: MemoryProposal[];
   sessionId: string;
   messages: ChatMessage[];
@@ -59,6 +61,16 @@ interface ChatResultPayload {
   workspaceContextLoaded: string[];
   memoryContextLoaded: string[];
   trace: ChatTrace;
+}
+
+function resolveDecisionCategory(item: {
+  scope: "teacher" | "class";
+  category?: MemoryCategory;
+}): MemoryCategory {
+  if (item.scope === "class") {
+    return "class";
+  }
+  return item.category === "pedagogical" ? "pedagogical" : "personal";
 }
 
 function sseEvent(event: string, payload: unknown): string {
@@ -363,19 +375,18 @@ export class ChatService {
         continue;
       }
 
-      const classId = item.scope === "class" ? item.classId?.trim() : "";
-      const path = classId
-        ? `classes/${classId.toUpperCase()}/MEMORY.md`
-        : "MEMORY.md";
-
-      await upsertMemoryFile({
+      const result = await appendCategorizedMemoryEntry({
         teacherId,
-        virtualPath: path,
-        content: `- ${item.text.trim()}`,
-        mode: "append",
+        scope: item.scope,
+        classId: item.classId,
+        category: resolveDecisionCategory(item),
+        text: item.text,
         sessionId: body.sessionId,
       });
-      confirmed += 1;
+
+      if (result.inserted) {
+        confirmed += 1;
+      }
     }
 
     return {
@@ -458,13 +469,24 @@ export class ChatService {
       throwApiError(404, "Session not found");
     }
 
-    const proposals = buildMemoryCaptureProposals({
-      classRef: params.workspaceContext.classRef,
-      latestUserMessage: latestUserMessage(params.body.messages),
-      finalAssistantMessage: finalAssistant,
-    });
+    let proposals: MemoryProposal[] = [];
+    try {
+      proposals = await extractNovelMemoryProposals({
+        teacherId: params.teacherId,
+        provider: params.body.provider as Provider,
+        model: params.body.model,
+        classRef: params.workspaceContext.classRef,
+        latestUserMessage: latestUserMessage(params.body.messages),
+        finalAssistantMessage: finalAssistant,
+        recentMessages: params.agentMessages,
+      });
+    } catch (error) {
+      console.warn("[memory] proposal extraction failed:", error);
+      proposals = [];
+    }
 
-    const status = proposals.length > 0 ? "awaiting_memory_capture" : "success";
+    const status =
+      proposals.length > 0 ? "awaiting_memory_capture" : "no_new_memory";
 
     return {
       response: {

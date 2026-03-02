@@ -62,7 +62,7 @@ export interface WorkspaceFileResponse {
 
 export interface ChatApiResponse {
   response: ModelResponse;
-  status?: "success" | "awaiting_memory_capture";
+  status?: "success" | "awaiting_memory_capture" | "no_new_memory";
   proposals?: MemoryProposal[];
   sessionId: string;
   messages: ChatMessage[];
@@ -77,6 +77,10 @@ export interface MemoryProposal {
   text: string;
   scope: "teacher" | "class";
   classId?: string;
+  category: "personal" | "pedagogical" | "class";
+  evidence: string;
+  confidence: number;
+  sourcePath: string;
 }
 
 export interface SkillManifestItem {

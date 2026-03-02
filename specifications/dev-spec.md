@@ -68,7 +68,7 @@ The runtime is a tool-use loop. The real value lives in markdown definitions and
 ### Primitives
 
 - **Workspace** — persistent educator context (teacher profile, class profiles, pedagogy preferences, curriculum references, assistant identity) stored as markdown files. Teacher profile, pedagogical preferences, and assistant identity (`soul.md`) are always loaded into the system prompt. Class profiles and curriculum references are inserted depending on the user prompt using tiered loading similar to skills.
-- **Memory** — accumulated knowledge the system learns from working with the teacher, stored in PostgreSQL and exposed as virtual markdown files. Teacher memory (cross-cutting preferences) loads at session start. Class memory (per-class learnings) loads when a class is referenced. The agent can read and write memory during sessions; a postLoop hook proposes session-end memory updates for teacher confirmation.
+- **Memory** — accumulated knowledge the system learns from working with the teacher, stored in PostgreSQL and exposed as virtual markdown files. Memory is classified into three preference categories: personal (teacher workflow/interaction preferences), pedagogical (instructional design preferences), and class-based (class-specific learnings). Teacher-scope memory loads at session start. Class-scope memory loads when a class is referenced. A lightweight extraction pass proposes updates from inbound and outbound turns, and only novel candidates are surfaced for teacher confirmation.
 - **Plugins** — domain-specific bundles of agents, skills, commands, and hooks.
 - **Agents** — LLMs configured with instructions, tools, and access to workspace, memory, and skills. Agent identity and interaction style come from `workspace/soul.md`.
 - **Skills** — pedagogical domain knowledge loaded progressively across three tiers, following the Claude Code / Anthropic Agent SDK pattern. Encodes domain knowledge so teachers don't need it in their prompts.
@@ -337,17 +337,17 @@ The specific reflection prompts are generated based on the workspace context and
 
 ### Memory-Capture Hook (Product Spec §5)
 
-The memory-capture hook is a postLoop hook that runs after the teacher adjudication gate. It reviews the completed session and proposes memory updates for teacher confirmation.
+The memory-capture hook is a postLoop hook that runs after the teacher adjudication gate. It reviews the completed session and proposes memory updates for teacher confirmation, but only when novel preference signals are detected.
 
 **Behaviour:**
 
-1. Reviews the session: what workspace/memory context was used, what was revised during adjudication, what patterns emerged (e.g. teacher consistently adjusted timing, revised differentiation approach, changed register)
-2. Proposes memory updates as a structured list, scoped to teacher or class level:
-   - Teacher-level: "You revised the worksheet register to be more informal — should I remember you prefer informal register in worksheets?"
-   - Class-level: "You shortened the starter from 10 to 5 minutes for 3B — should I remember shorter starters work better for this class?"
-3. Sends proposals to the frontend for teacher confirmation/edit/dismissal per item
-4. Confirmed items written to appropriate memory scope via `update_memory`
-5. All decisions logged to trace (proposed text, scope, teacher decision, final text if edited)
+1. Runs lightweight extraction over inbound and outbound turn content plus adjudication edits.
+2. Classifies candidates as `personal`, `pedagogical`, or `class`, and rejects generic summaries.
+3. Applies novelty filtering against existing memory in the same scope/category.
+4. If no candidates survive, emit `no_new_memory` and skip capture UI.
+5. If candidates survive, send proposals to the frontend for confirm/edit/dismiss per item.
+6. Confirmed items written to appropriate memory scope via `update_memory`.
+7. All decisions logged to trace (proposed text, category, scope, teacher decision, final text if edited).
 
 **Research value:** Memory-capture engagement is a P2 metric (product spec §7.3). Confirmation vs. dismissal patterns reveal what teachers find worth remembering, and whether memory curation feels like useful reflection or unwanted friction.
 
@@ -389,8 +389,8 @@ Composed from multiple sources in defined order:
 1. **Assistant identity** — `workspace/soul.md`, defining interaction style, professional stance, and values. Teacher-editable.
 2. **Agent instructions** — the agent's markdown body (technical capabilities and behaviour)
 3. **Workspace context** — content of workspace files referenced by the agent definition (teacher profile, pedagogy preferences)
-4. **Teacher memory** — first 200 lines of `MEMORY.md` from teacher-scope memory. Accumulated cross-cutting preferences and patterns.
-5. **Class memory** — `MEMORY.md` for referenced class, if identified by feedforward or command parsing. Accumulated per-class learnings.
+4. **Teacher memory** — first 200 lines of `MEMORY.md` from teacher-scope memory. Includes personal and pedagogical preferences.
+5. **Class memory** — `MEMORY.md` for referenced class, if identified by feedforward or command parsing. Includes class-based learnings.
 6. **Skill manifest** — names and descriptions of available skills (Tier 1 only)
 7. **Command-specific framing** — the command's markdown body, if a command was invoked
 8. **Commands-available** — names and descriptions of available commands
@@ -406,10 +406,10 @@ Memory is accumulated knowledge the system learns from working with the teacher.
 
 #### Storage
 
-Memory is stored in PostgreSQL with virtual markdown file access via tools. The schema supports two scopes:
+Memory is stored in PostgreSQL with virtual markdown file access via tools. The schema supports two scopes with three preference categories:
 
-- **Teacher memory**: Cross-cutting preferences and patterns. Keyed by teacher ID.
-- **Class memory**: Per-class learnings. Keyed by teacher ID + class identifier.
+- **Teacher scope**: personal preferences + pedagogical preferences. Keyed by teacher ID.
+- **Class scope**: class-based learnings. Keyed by teacher ID + class identifier.
 
 Each scope has a `MEMORY.md` entrypoint and optional topic files, mirroring the Claude Code directory structure:
 
@@ -417,6 +417,7 @@ Each scope has a `MEMORY.md` entrypoint and optional topic files, mirroring the 
 Teacher memory (virtual paths):
   memory/MEMORY.md              # Index — first 200 lines loaded at session start
   memory/planning-patterns.md   # "Prefers bullet-point plans, informal worksheet register"
+  memory/pedagogy-preferences.md # "Prefers retrieval starters + worked examples before independent practice"
   memory/style-preferences.md   # "Uses Scots dialect examples in Computing Science"
 
 Class memory (virtual paths):
@@ -439,6 +440,18 @@ Two mechanisms, both traced:
 2. **Hook-driven** (post-session): The `memory-capture` postLoop hook does a structured review and proposes confirmed insights for teacher approval. This is the primary mechanism for persistent memory — teacher confirmation ensures quality.
 
 Both mechanisms follow the same anonymisation principles as workspace: memory records "the EAL pair" or "the advanced group", never named students.
+
+**Preference extraction policy:**
+
+- Extraction input includes both user and assistant messages from the completed turn window.
+- Extracted candidates must be typed as `personal`, `pedagogical`, or `class`.
+- Generic prompt/response summaries are rejected; candidates must represent durable preferences or constraints.
+- Candidates pass through novelty filtering against existing scope/category memory before any teacher-facing prompt.
+
+**No-new-memory behaviour:**
+
+- If no candidate survives novelty filtering, the system emits `no_new_memory` and skips memory-capture UI.
+- This is the default path for stable sessions where existing memory already covers known preferences.
 
 #### Memory management
 

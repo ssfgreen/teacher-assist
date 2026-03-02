@@ -27,6 +27,7 @@ export function useChatSession({
   const previousSessionIdRef = useRef<string | null>(currentSessionId);
   const abortControllerRef = useRef<AbortController | null>(null);
   const setMemoryProposals = useMemoryStore((state) => state.setProposals);
+  const clearMemoryProposals = useMemoryStore((state) => state.clearProposals);
 
   const [messageInput, setMessageInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -57,6 +58,7 @@ export function useChatSession({
       return;
     }
 
+    setMessageInput("");
     setChatLoading(true);
     setChatError(null);
 
@@ -196,8 +198,9 @@ export function useChatSession({
       }
       if (response.status === "awaiting_memory_capture" && response.proposals) {
         setMemoryProposals(response.proposals);
+      } else {
+        clearMemoryProposals();
       }
-      setMessageInput("");
       await refreshSessions();
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {

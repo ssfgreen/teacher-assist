@@ -1018,13 +1018,13 @@ export default function App() {
           </div>
         </section>
       ) : (
-        <div className="relative h-full">
+        <div className="relative flex h-full min-h-0 flex-col">
           <MemoryCaptureCard
             sessionId={currentSession?.id ?? null}
             onSubmitted={refreshSessions}
           />
           <div
-            className={`h-full pr-0 transition-[padding] duration-200 ease-out ${inspector ? "lg:pr-[26rem]" : ""}`}
+            className={`min-h-0 flex-1 pr-0 transition-[padding] duration-200 ease-out ${inspector ? "lg:pr-[26rem]" : ""}`}
           >
             <ChatPane
               classRefs={classRefs}
@@ -1059,10 +1059,11 @@ export default function App() {
               cancelMessage={cancelMessage}
             />
           </div>
-          <aside
-            className={`pointer-events-none absolute inset-y-0 right-0 hidden w-[25rem] border-l border-paper-300 bg-surface-panel transition-transform duration-200 ease-out lg:block ${inspector ? "translate-x-0 pointer-events-auto" : "translate-x-full"}`}
-          >
-            {inspector ? (
+          {inspector ? (
+            <aside
+              data-testid="right-inspector"
+              className="absolute inset-y-0 right-0 hidden w-[25rem] border-l border-paper-300 bg-surface-panel lg:block"
+            >
               <div className="flex h-full min-h-0 flex-col">
                 <div className="flex items-center justify-between border-b border-paper-300 px-3 py-2">
                   <div className="min-w-0">
@@ -1100,8 +1101,8 @@ export default function App() {
                   ) : null}
                 </div>
               </div>
-            ) : null}
-          </aside>
+            </aside>
+          ) : null}
         </div>
       )}
     </Shell>

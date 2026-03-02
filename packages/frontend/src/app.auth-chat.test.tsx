@@ -41,6 +41,75 @@ describe("App auth and chat", () => {
     expect(helloMatches.length).toBeGreaterThan(0);
   });
 
+  it("clears composer input immediately after submit", async () => {
+    let resolveStream!: (value: ChatApiResponse) => void;
+    const streamDone = new Promise<ChatApiResponse>((resolve) => {
+      resolveStream = resolve;
+    });
+
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onContext?.({
+          workspaceContextLoaded: ["soul.md"],
+          memoryContextLoaded: ["MEMORY.md"],
+          systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+          estimatedPromptTokens: 12,
+        });
+        callbacks.onDelta("Working...");
+        return streamDone;
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    expect((input as HTMLTextAreaElement).value).toBe("");
+
+    resolveStream({
+      sessionId: "s1",
+      messages: [
+        { role: "user", content: "Plan loops" },
+        { role: "assistant", content: "Working... done" },
+      ],
+      skillsLoaded: [],
+      status: "no_new_memory",
+      trace: {
+        id: "trace-input-clear",
+        createdAt: "2026-03-02T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md"],
+      memoryContextLoaded: ["MEMORY.md"],
+      response: {
+        content: "Working... done",
+        toolCalls: [],
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        stopReason: "stop",
+      },
+    });
+  });
+
   it("renders context and tool steps before stream completion", async () => {
     let resolveStream!: (value: ChatApiResponse) => void;
     const streamDone = new Promise<ChatApiResponse>((resolve) => {
@@ -199,6 +268,77 @@ describe("App auth and chat", () => {
     expect(vi.mocked(chatApi.sendChatStream).mock.calls[0]?.[0]).toMatchObject({
       classRef: "3B",
     });
+  });
+
+  it("shows context-added timeline entry only when context changes", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementation(
+      async (params, callbacks) => {
+        callbacks.onContext?.({
+          workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
+          memoryContextLoaded: ["MEMORY.md"],
+          systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+          estimatedPromptTokens: 12,
+        });
+        callbacks.onDelta("Draft ready");
+        return {
+          sessionId: params.sessionId ?? "s1",
+          messages: [
+            ...(params.messages as Array<{
+              role: "user" | "assistant";
+              content: string;
+            }>),
+            { role: "assistant", content: "Draft ready" },
+          ],
+          skillsLoaded: [],
+          status: "no_new_memory",
+          trace: {
+            id: `trace-${Math.random()}`,
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 12,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 2,
+              totalTokens: 3,
+              estimatedCostUsd: 0.000006,
+            },
+            status: "success",
+            steps: [],
+          },
+          workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
+          memoryContextLoaded: ["MEMORY.md"],
+          response: {
+            content: "Draft ready",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 2,
+              totalTokens: 3,
+              estimatedCostUsd: 0.000006,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "First request{enter}");
+    await screen.findByText("Draft ready");
+    await user.type(input, "Second request{enter}");
+    await waitFor(() => {
+      expect(chatApi.sendChatStream).toHaveBeenCalledTimes(2);
+    });
+
+    const matches = screen.getAllByText("prompt embellished: context added");
+    expect(matches).toHaveLength(1);
   });
 
   it("renders tool call blocks and marks loaded skill as active", async () => {
@@ -439,7 +579,9 @@ describe("App auth and chat", () => {
 
     const grouped = await screen.findByText(/reading skills/i);
     await user.click(grouped);
+    expect(screen.queryByTestId("right-inspector")).not.toBeInTheDocument();
     await user.click(await screen.findByText(/read skill: backward-design/i));
+    expect(screen.getByTestId("right-inspector")).toBeInTheDocument();
     await screen.findByText("Skill file content.");
   });
 

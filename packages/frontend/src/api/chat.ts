@@ -21,6 +21,7 @@ export async function sendMemoryResponse(params: {
     decision: "confirm" | "dismiss";
     scope: "teacher" | "class";
     classId?: string;
+    category?: "personal" | "pedagogical" | "class";
   }>;
 }): Promise<{ ok: true; confirmed: number; dismissed: number }> {
   return apiFetch<{ ok: true; confirmed: number; dismissed: number }>(

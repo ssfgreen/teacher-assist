@@ -1,4 +1,5 @@
 import { getDataSource } from "./db";
+import { type MemoryCategory, upsertCategoryEntry } from "./memory-format";
 import { normalizeRelativePath } from "./workspace/path";
 import { buildTreeFromPaths } from "./workspace/tree";
 import type { WorkspaceNode } from "./workspace/types";
@@ -19,6 +20,10 @@ export interface MemoryProposal {
   text: string;
   scope: "teacher" | "class";
   classId?: string;
+  category: MemoryCategory;
+  evidence: string;
+  confidence: number;
+  sourcePath: string;
 }
 
 function normalizeClassId(value: string): string {
@@ -242,6 +247,71 @@ export async function deleteMemoryFile(
   return true;
 }
 
+export async function appendCategorizedMemoryEntry(params: {
+  teacherId: string;
+  scope: "teacher" | "class";
+  classId?: string;
+  category: MemoryCategory;
+  text: string;
+  sessionId?: string;
+  traceId?: string;
+}): Promise<{ inserted: boolean; path: string; content: string }> {
+  const classId =
+    params.scope === "class" ? normalizeClassId(params.classId ?? "") : null;
+
+  if (params.scope === "class" && !classId) {
+    throw new Error("Class scope requires classId");
+  }
+
+  const virtualPath = classId ? `classes/${classId}/MEMORY.md` : "MEMORY.md";
+  let existing = "";
+
+  try {
+    existing = await readMemoryFile(params.teacherId, virtualPath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message !== "Memory file not found") {
+      throw error;
+    }
+  }
+
+  const next = upsertCategoryEntry(existing, params.category, params.text);
+  if (!next.inserted) {
+    await logMemoryEvent({
+      teacherId: params.teacherId,
+      eventType: "dedupe_skip",
+      classId,
+      path: "MEMORY.md",
+      payload: {
+        category: params.category,
+      },
+      sessionId: params.sessionId,
+      traceId: params.traceId,
+    });
+
+    return {
+      inserted: false,
+      path: virtualPath,
+      content: existing,
+    };
+  }
+
+  const written = await upsertMemoryFile({
+    teacherId: params.teacherId,
+    virtualPath,
+    content: next.content,
+    mode: "replace",
+    sessionId: params.sessionId,
+    traceId: params.traceId,
+  });
+
+  return {
+    inserted: true,
+    path: written.path,
+    content: written.content,
+  };
+}
+
 function firstLines(content: string, maxLines: number): string {
   const lines = content.split("\n");
   return lines.slice(0, maxLines).join("\n");
@@ -357,39 +427,4 @@ export async function searchSessions(params: {
     createdAt: new Date(row.created_at).toISOString(),
     classRef: row.class_ref,
   }));
-}
-
-export function buildMemoryCaptureProposals(params: {
-  classRef?: string | null;
-  latestUserMessage: string;
-  finalAssistantMessage: string;
-}): MemoryProposal[] {
-  const proposals: MemoryProposal[] = [];
-  const trimmedUser = params.latestUserMessage.trim();
-  const trimmedAssistant = params.finalAssistantMessage.trim();
-
-  if (trimmedUser.length > 0) {
-    proposals.push({
-      id: "proposal-user-pattern",
-      text: `Teacher request pattern: ${trimmedUser.slice(0, 220)}`,
-      scope: "teacher",
-    });
-  }
-
-  if (trimmedAssistant.length > 0 && params.classRef) {
-    proposals.push({
-      id: "proposal-class-strategy",
-      text: `For class ${params.classRef.toUpperCase()}: ${trimmedAssistant.slice(0, 220)}`,
-      scope: "class",
-      classId: params.classRef.toUpperCase(),
-    });
-  } else if (trimmedAssistant.length > 0) {
-    proposals.push({
-      id: "proposal-teacher-strategy",
-      text: `Working strategy: ${trimmedAssistant.slice(0, 220)}`,
-      scope: "teacher",
-    });
-  }
-
-  return proposals.slice(0, 3);
 }

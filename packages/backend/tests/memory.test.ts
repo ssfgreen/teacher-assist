@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 
 import {
+  appendCategorizedMemoryEntry,
   loadMemoryContext,
   readMemoryFile,
   searchSessions,
@@ -112,5 +113,23 @@ describe("memory", () => {
 
     expect(hits.length).toBe(1);
     expect(hits[0]?.sessionId).toBe(alpha.id);
+  });
+
+  it("appends categorized memory into section headings", async () => {
+    const inserted = await appendCategorizedMemoryEntry({
+      teacherId: teacherA.id,
+      scope: "teacher",
+      category: "pedagogical",
+      text: "Prefers worked examples before independent practice.",
+    });
+
+    expect(inserted.inserted).toBe(true);
+    const content = await readMemoryFile(teacherA.id, "MEMORY.md");
+    expect(content.includes("## Pedagogical Preferences")).toBe(true);
+    expect(
+      content.includes(
+        "- Prefers worked examples before independent practice.",
+      ),
+    ).toBe(true);
   });
 });

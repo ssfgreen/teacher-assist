@@ -191,6 +191,77 @@ describe("server integration", () => {
     expect(session.messages.at(-1)?.role).toBe("assistant");
   });
 
+  it("returns no_new_memory when extractor finds no novel preferences", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        messages: [{ role: "user", content: "Plan a lesson starter" }],
+      }),
+    });
+
+    expect(chatResponse.status).toBe(200);
+    const body = (await chatResponse.json()) as { status?: string };
+    expect(body.status).toBe("no_new_memory");
+  });
+
+  it("proposes memory capture for explicit lesson-duration preferences", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        messages: [
+          { role: "user", content: "All my lessons are 45 minutes long." },
+        ],
+      }),
+    });
+
+    expect(chatResponse.status).toBe(200);
+    const body = (await chatResponse.json()) as {
+      status?: string;
+      proposals?: Array<{ text?: string; category?: string }>;
+    };
+    expect(body.status).toBe("awaiting_memory_capture");
+    expect(
+      body.proposals?.some((proposal) => proposal.category === "pedagogical"),
+    ).toBe(true);
+    expect(
+      body.proposals?.some((proposal) =>
+        (proposal.text ?? "").toLowerCase().includes("45 minutes"),
+      ),
+    ).toBe(true);
+  });
+
   it("prevents cross-user session access", async () => {
     const loginResponse = await request("/api/auth/login", {
       method: "POST",

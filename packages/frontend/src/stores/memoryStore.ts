@@ -14,6 +14,7 @@ interface MemoryDecision {
   text: string;
   scope: "teacher" | "class";
   classId?: string;
+  category: "personal" | "pedagogical" | "class";
 }
 
 interface MemoryState {
@@ -38,6 +39,7 @@ interface MemoryState {
   editProposal: (proposalId: string, text: string) => void;
   confirmAll: () => void;
   dismissAll: () => void;
+  removeProposal: (proposalId: string) => void;
   clearProposals: () => void;
   decisionList: () => MemoryDecision[];
 }
@@ -49,6 +51,7 @@ function toDecision(proposal: MemoryProposal): MemoryDecision {
     text: proposal.text,
     scope: proposal.scope,
     classId: proposal.classId,
+    category: proposal.category,
   };
 }
 
@@ -224,6 +227,19 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
         ]),
       ),
     }));
+  },
+
+  removeProposal: (proposalId) => {
+    set((state) => {
+      const nextProposals = state.proposals.filter(
+        (proposal) => proposal.id !== proposalId,
+      );
+      const { [proposalId]: _ignored, ...nextDecisions } = state.decisions;
+      return {
+        proposals: nextProposals,
+        decisions: nextDecisions,
+      };
+    });
   },
 
   clearProposals: () => {

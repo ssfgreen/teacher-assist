@@ -501,6 +501,84 @@ DELETE /api/memory/*path
 POST   /api/chat/memory-response
 ```
 
+## Sprint 5.1 — Preference Memory Extraction Rework
+
+**Goal:** Replace generic memory consolidation with targeted extraction of durable preferences from both inbound and outbound messages. Persist only high-value memory in three categories: personal, pedagogical, and class-based. Do not interrupt the teacher when nothing new is learned.
+
+### Status (Planned)
+
+- [ ] Structured preference schema and extraction contract finalised
+- [ ] Lightweight extractor model call integrated into post-response pipeline
+- [ ] Novelty/duplicate gate implemented before teacher-facing proposals
+- [ ] Memory-capture API updated to return `no_new_memory` when empty
+- [ ] Trace metrics added for extraction precision, novelty rate, and dismissal rate
+
+### Deliverables
+
+#### Preference Taxonomy + Storage Contract
+
+- Define a typed memory record model with:
+  - `category`: `personal | pedagogical | class`
+  - `scope`: `teacher | class`
+  - `classId` (required when `scope = class`)
+  - `statement` (single durable preference/constraint)
+  - `evidence` (message references from user and/or assistant turns)
+  - `confidence` and `noveltyScore`
+- Keep virtual markdown compatibility, but standardise section headings in memory files:
+  - `## Personal Preferences`
+  - `## Pedagogical Preferences`
+  - `## Class-Based Learnings`
+
+#### Lightweight Extraction Pipeline
+
+- Run a small-model extraction pass after each completed turn using:
+  - latest user message
+  - assistant response
+  - recent turn window for context (bounded)
+  - currently stored memory for de-duplication context
+- Extractor returns zero or more candidate preferences with category and evidence.
+- Hard validation rejects candidates that are:
+  - ephemeral task details
+  - generic prompt/response summaries
+  - unsupported by turn evidence
+
+#### Novelty Gate (No-Noise Rule)
+
+- Before surfacing candidates, compare against existing memory entries in the same scope/category.
+- Use deterministic similarity + rule checks to filter near-duplicates and already-known facts.
+- If no candidate passes novelty threshold:
+  - skip memory capture UI
+  - return status `no_new_memory`
+  - emit trace event `memory.extraction.empty`
+
+#### Teacher Confirmation Contract (Only When Needed)
+
+- `POST /api/chat/memory-response` only used when proposals exist.
+- Chat completion response includes:
+  - `status: 'awaiting_memory_capture'` with grouped proposals when novel items exist
+  - `status: 'no_new_memory'` when none exist
+- Persist only confirmed/edited items; dismissed items become negative signals for future extraction tuning.
+
+#### Feedforward Integration
+
+- Feedforward summary labels memory by category:
+  - personal (teacher interaction/workflow preferences)
+  - pedagogical (instructional strategy preferences)
+  - class-based (class-specific constraints and successful tactics)
+- Only include confirmed memory; never include pending proposals.
+
+### Tests
+
+- **Unit:** Extractor output schema validation and category classification
+- **Unit:** Duplicate detection across paraphrased statements
+- **Unit:** Novelty gate returns empty when memory already covers candidates
+- **Unit:** Rejection of prompt/response-summary candidates
+- **Integration:** User+assistant turns produce correctly categorized proposals
+- **Integration:** No novel candidates returns `status: 'no_new_memory'` and no memory writes
+- **Integration:** Confirm flow writes to correct category section and scope
+- **Integration:** Dismissed candidate is logged and down-weighted on future similar turns
+- **Integration:** Feedforward renders category-labelled confirmed memory only
+
 ## Sprint 5.5 - UI Updates
 
 - System prompt should be responded to use markdown formatting for headings, bold, etc knowing these will be rendered client side.

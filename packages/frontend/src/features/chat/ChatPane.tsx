@@ -86,6 +86,24 @@ function alignByTurn<T>(
   return aligned;
 }
 
+function normalizePathList(paths: string[]): string[] {
+  return [...new Set(paths)].sort();
+}
+
+function samePathList(a: string[], b: string[]): boolean {
+  const left = normalizePathList(a);
+  const right = normalizePathList(b);
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildTimelineEntries(
   messages: ChatMessage[],
   contextHistory: string[][],
@@ -129,7 +147,16 @@ function buildTimelineEntries(
     const memoryPaths = memoryByTurn[turnIndex];
     const turnTrace = tracesByTurn[turnIndex];
 
-    if (workspacePaths.length > 0 || memoryPaths.length > 0) {
+    const hasContext = workspacePaths.length > 0 || memoryPaths.length > 0;
+    const prevWorkspacePaths =
+      turnIndex > 0 ? contextsByTurn[turnIndex - 1] : [];
+    const prevMemoryPaths = turnIndex > 0 ? memoryByTurn[turnIndex - 1] : [];
+    const contextChanged =
+      turnIndex === 0 ||
+      !samePathList(workspacePaths, prevWorkspacePaths) ||
+      !samePathList(memoryPaths, prevMemoryPaths);
+
+    if (hasContext && contextChanged) {
       entries.push({
         id: `turn-${turnIndex}-context`,
         kind: "context-added",

@@ -123,12 +123,13 @@ Ms Campbell has been using the system for three weeks with class 3B. She starts 
 
 **Sessions** - Persistent conversation history. Teachers can resume where they left off, iterating on a lesson plan across multiple sittings. This supports the observed workflow pattern where planning happens in fragments across the week.
 
-**Memory** - Accumulated knowledge the system learns from working with the teacher over time. Unlike the workspace (which the teacher declares up front), memory grows from planning sessions. It captures what the system discovers while working: which strategies work for specific classes, how the teacher prefers outputs structured, evolving student contexts. Memory has two scopes:
+**Memory** - Accumulated knowledge the system learns from working with the teacher over time. Unlike the workspace (which the teacher declares up front), memory grows from planning sessions. It captures what the system discovers while working: which strategies work for specific classes, how the teacher prefers outputs structured, evolving student contexts. Memory is organised into three teacher-facing categories:
 
-- **Teacher memory**: Cross-cutting preferences and patterns — "prefers bullet-point lesson plans", "always wants a plenary", "uses informal register in worksheets". Loaded at the start of every session.
-- **Class memory**: What the system has learned about planning for a specific class — "shorter starters work better", "EAL pair benefits from visual scaffolds", "completed iteration and functions units". Loaded when that class is referenced.
+- **Personal preferences** (teacher-level): workflow and interaction preferences — "prefers bullet-point lesson plans", "wants concise outputs first".
+- **Pedagogical preferences** (teacher-level): instructional design preferences — "uses retrieval starters", "prefers worked examples before independent practice".
+- **Class-based learnings** (class-level): what has worked for a specific class — "shorter starters work better for 3B", "EAL pair benefits from visual scaffolds", "completed iteration and functions units".
 
-Teachers can review, edit, and confirm what the system remembers. The system proposes memory updates at the end of sessions; teachers decide what sticks. This ensures memory is useful without being intrusive, and keeps the teacher in control of what the system "knows" about them and their classes.
+Teachers can review, edit, and confirm what the system remembers. The system proposes updates only when it detects genuinely new memory; if nothing new is learned, it stays silent. This keeps memory useful without being intrusive, and keeps the teacher in control of what the system "knows".
 
 ### Available but behind a layer of obfuscation
 
