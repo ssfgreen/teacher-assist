@@ -20,14 +20,14 @@ export default function LoginPanel() {
   };
 
   return (
-    <div className="mx-auto mt-16 w-full max-w-md rounded-2xl border border-paper-100 bg-white p-6 shadow-sm">
+    <div className="mx-auto mt-16 w-full max-w-md rounded-2xl border border-paper-200 bg-surface-panel p-6 shadow-sm">
       <h1 className="font-display text-3xl">Teacher Assist</h1>
       <p className="mt-2 text-sm text-ink-800">Sign in to continue.</p>
       <form className="mt-6 space-y-4" onSubmit={onSubmit}>
         <label className="block text-sm">
           Email
           <input
-            className="mt-1 w-full rounded-lg border border-paper-100 px-3 py-2"
+            className="mt-1 w-full rounded-lg border border-paper-300 bg-surface-input px-3 py-2"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -37,16 +37,16 @@ export default function LoginPanel() {
         <label className="block text-sm">
           Password
           <input
-            className="mt-1 w-full rounded-lg border border-paper-100 px-3 py-2"
+            className="mt-1 w-full rounded-lg border border-paper-300 bg-surface-input px-3 py-2"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
           />
         </label>
-        {error ? <p className="text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="text-sm text-danger-700">{error}</p> : null}
         <button
-          className="w-full rounded-lg bg-accent-600 px-4 py-2 font-medium text-white disabled:opacity-60"
+          className="w-full rounded-lg bg-accent-600 px-4 py-2 font-medium text-surface-panel disabled:opacity-60"
           type="submit"
           disabled={loading}
         >

@@ -14,6 +14,24 @@ export async function sendChat(params: {
   });
 }
 
+export async function sendMemoryResponse(params: {
+  sessionId: string;
+  decisions: Array<{
+    text: string;
+    decision: "confirm" | "dismiss";
+    scope: "teacher" | "class";
+    classId?: string;
+  }>;
+}): Promise<{ ok: true; confirmed: number; dismissed: number }> {
+  return apiFetch<{ ok: true; confirmed: number; dismissed: number }>(
+    "/api/chat/memory-response",
+    {
+      method: "POST",
+      body: JSON.stringify(params),
+    },
+  );
+}
+
 export async function sendChatStream(
   params: {
     messages: ChatMessage[];
@@ -22,7 +40,11 @@ export async function sendChatStream(
     sessionId?: string;
     classRef?: string;
   },
-  onDelta: (delta: string) => void,
+  callbacks: {
+    onDelta: (delta: string) => void;
+    onMessage?: (message: ChatMessage) => void;
+  },
+  signal?: AbortSignal,
 ): Promise<ChatApiResponse> {
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -34,6 +56,7 @@ export async function sendChatStream(
       ...params,
       stream: true,
     }),
+    signal,
   });
 
   if (!response.ok || !response.body) {
@@ -70,11 +93,16 @@ export async function sendChatStream(
       const eventType = eventLine.slice("event:".length).trim();
       const data = JSON.parse(dataLine.slice("data:".length).trim()) as
         | { text: string }
+        | { message: ChatMessage }
         | { error: string }
         | ChatApiResponse;
 
       if (eventType === "delta" && "text" in data) {
-        onDelta(data.text);
+        callbacks.onDelta(data.text);
+      }
+
+      if (eventType === "message" && "message" in data) {
+        callbacks.onMessage?.(data.message);
       }
 
       if (eventType === "error" && "error" in data) {

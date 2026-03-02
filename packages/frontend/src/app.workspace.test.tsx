@@ -11,6 +11,7 @@ vi.mock("./api/chat");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
 vi.mock("./api/skills");
+vi.mock("./api/memory");
 
 beforeEach(() => {
   setupDefaultMocks();
@@ -24,9 +25,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
-    await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
+    await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
 
     await waitFor(() => {
       expect(workspaceApi.readWorkspaceFile).toHaveBeenCalledWith("soul.md");
@@ -47,7 +46,7 @@ describe("App workspace", () => {
       classRef: undefined,
     });
 
-    await screen.findByText("Context added");
+    await screen.findByText(/prompt embellished: context added/i);
   });
 
   it("creates a file inside the selected folder", async () => {
@@ -58,10 +57,10 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
-    await user.click(screen.getByRole("button", { name: /classes/i }));
-    await user.click(screen.getByRole("button", { name: "Create file" }));
+    await user.click(
+      screen.getByRole("button", { name: /More actions for classes$/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "New file" }));
     const input = await screen.findByRole("textbox", {
       name: /New file name input/i,
     });
@@ -84,10 +83,10 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
-    await user.click(screen.getByRole("button", { name: /curriculum/i }));
-    await user.click(screen.getByRole("button", { name: "Create folder" }));
+    await user.click(
+      screen.getByRole("button", { name: /More actions for curriculum$/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "New folder" }));
     const input = await screen.findByRole("textbox", {
       name: /New folder name input/i,
     });
@@ -110,10 +109,10 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
-    await user.click(screen.getByRole("button", { name: /CLASS.md/i }));
-    await user.click(screen.getByRole("button", { name: "Rename selected" }));
+    await user.click(screen.getByRole("button", { name: "CLASS.md" }));
+    await user.click(
+      screen.getByRole("button", { name: "Rename classes/3B/CLASS.md" }),
+    );
     const input = await screen.findByDisplayValue("CLASS.md");
     await user.clear(input);
     await user.type(input, "CLASS-RENAMED.md{enter}");
@@ -133,10 +132,10 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
-    await user.click(screen.getByRole("button", { name: /^▾ ▣ classes$/i }));
-    await user.click(screen.getByRole("button", { name: "Create folder" }));
+    await user.click(
+      screen.getByRole("button", { name: /More actions for classes$/i }),
+    );
+    await user.click(screen.getByRole("button", { name: "New folder" }));
     const input = await screen.findByRole("textbox", {
       name: /New folder name input/i,
     });
@@ -158,11 +157,13 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
-    await user.click(screen.getByRole("button", { name: /CLASS.md/i }));
-    await user.click(screen.getByRole("button", { name: "Delete selected" }));
-    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await user.click(
+      screen.getByRole("button", {
+        name: /More actions for classes\/3B\/CLASS\.md/i,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Archive" }));
 
     await waitFor(() => {
       expect(workspaceApi.deleteWorkspaceFile).toHaveBeenCalledWith(
@@ -178,8 +179,6 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-
     await user.click(
       screen.getByRole("button", { name: "Workspace settings" }),
     );

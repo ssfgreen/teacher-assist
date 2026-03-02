@@ -5,6 +5,8 @@ import { AuthController } from "./modules/auth/auth.controller";
 import { AuthService } from "./modules/auth/auth.service";
 import { ChatController } from "./modules/chat/chat.controller";
 import { ChatService } from "./modules/chat/chat.service";
+import { MemoryController } from "./modules/memory/memory.controller";
+import { MemoryService } from "./modules/memory/memory.service";
 import { SessionsController } from "./modules/sessions/sessions.controller";
 import { SessionsService } from "./modules/sessions/sessions.service";
 import { SkillsController } from "./modules/skills/skills.controller";
@@ -21,6 +23,7 @@ import { buildTypeOrmOptions } from "./typeorm/options";
     SessionsController,
     SkillsController,
     WorkspaceController,
+    MemoryController,
   ],
   providers: [
     AuthService,
@@ -28,6 +31,7 @@ import { buildTypeOrmOptions } from "./typeorm/options";
     SessionsService,
     SkillsService,
     WorkspaceService,
+    MemoryService,
   ],
 })
 export class AppModule {}

@@ -165,9 +165,9 @@ DELETE /api/sessions/:id
   1. Assistant identity (`soul.md`)
   2. Agent instructions (hardcoded planner instructions for now — no `agents/` + `skills/` discovery yet)
   3. Workspace context (teacher profile, pedagogy preferences)
-  4. (Position 4–5 reserved for memory — Sprint 7)
+  4. (Position 4–5 reserved for memory — Sprint 5)
   5. (Skill manifest — Sprint 3)
-  6. (Command framing — Sprint 4)
+  6. (Command framing — Sprint 8)
 - Each section wrapped in XML tags: `<assistant-identity>`, `<agent-instructions>`, `<workspace-context>`, etc.
 - Token budget tracking: log total system prompt tokens per call
 
@@ -376,189 +376,39 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
 
 ---
 
-## Sprint 4 — Commands + Hooks
+## Sprint 4 — Streaming
 
-**Goal:** Commands provide named entry points for tasks (`create-lesson`, `refine-lesson`). Hooks fire at defined lifecycle points (preLoop, postLoop, preModel, postModel, preTool, postTool). The feedforward, reflection, adjudication, and guardrail hooks are implemented.
+**Goal:** Stream model output token-by-token through the full agent loop while preserving tool execution and trace integrity.
 
-### Deliverables
+### Status (Implemented 2026-03-02)
 
-#### Skills + Agents Discovery (`discovery.ts`)
-
-- Scan workspace root for:
-  - `skills/` (skill definitions)
-  - `agents/` (agent definitions)
-- Parse command markdown frontmatter (agent, description, mode, writes)
-- Parse agent markdown frontmatter (model, provider, workspace, skills, tools, disallowedTools, mcpServers, hooks, maxTurns, maxBudgetUsd, permissionMode)
-
-#### Loop Configuration Surface
-
-- `runAgentLoop` options include:
-  - `maxTurns?: number`
-  - `maxBudgetUsd?: number`
-  - `maxToolRetries?: number`
-  - `maxNoProgressIterations?: number`
-  - `forceFinalizeOnStall?: boolean`
-- Agent frontmatter can optionally override safe defaults for retry/no-progress controls in bounded ranges.
-
-#### Command Routing
-
-- `POST /api/chat` extended: `{ messages, provider?, model?, sessionId?, command? }`
-- When `command` specified (e.g. `"create-lesson"`):
-  - Look up command definition
-  - Load command-specific framing (command markdown body) into system prompt at position 7
-  - Route to the command's specified agent
-  - Apply agent's model/provider if not overridden
-- `GET /api/commands` — list available commands with descriptions
-- Commands-available list added to system prompt at position 8
-
-#### Hook Infrastructure (`hooks.ts`)
-
-- Hook type definitions for each lifecycle point: `preLoop`, `postLoop`, `preModel`, `postModel`, `preTool`, `postTool`
-- Hook resolution: agent definition lists hook names → resolve to backend implementations in `packages/backend/src/hooks/*`
-- Hook execution: run hooks in order, passing context (messages, tool calls, agent state)
-- Hook abort: any hook can throw `HookAbortError(name, reason)` → terminates agent loop with status `error_hook_abort`
-- All hook executions logged (for traces in Sprint 6)
-
-#### Implemented Hooks
-
-**`scope-check` (preLoop):** Validates the request is within lesson-planning domain. Simple keyword/intent check. Aborts with explanation if off-topic.
-
-**`feedforward` (preLoop):** Identifies relevant workspace context (class profile, teacher preferences, curriculum). Composes summary. Returns it to the frontend for confirmation before generation proceeds. This is an interactive hook — it pauses the loop and waits for teacher response.
-
-- API: `POST /api/chat` can return `{ status: 'awaiting_feedforward', feedforward: { summary, contexts } }` instead of a model response
-- Frontend confirms/modifies/dismisses → sends `POST /api/chat/feedforward-response` → loop continues
-
-**`age-appropriate` (postLoop):** Validates output is appropriate for the year group in the class profile. Simple heuristic checks + optional model-as-judge call (Haiku for cost).
-
-**`curriculum-evidence` (postLoop):** Validates curriculum alignment claims include evidence pointers. Checks referenced files exist in workspace, line ranges valid, quoted text matches. Aborts if fabricated outcomes detected.
-
-**`reflection-prompt` (postLoop):** Generates reflection questions based on workspace context and command. Returns to frontend for display before adjudication.
-
-- API: response includes `{ reflectionPrompts: string[] }` in the postLoop phase
-
-**`teacher-adjudication` (postLoop):** Presents Accept/Revise/Generate Alternatives per section. Interactive — pauses for teacher decision.
-
-- API: `POST /api/chat` returns `{ status: 'awaiting_adjudication', sections: [...] }`
-- Frontend sends decisions → `POST /api/chat/adjudication-response`
-- "Revise" re-enters the agent loop with revision instructions
-- "Generate Alternatives" re-enters with alternative generation instructions
-
-#### Updated Agent Loop
-
-- Hooks integrated at all lifecycle points
-- preLoop hooks run before first model call (feedforward, scope-check)
-- postLoop hooks run after final model response (age-appropriate, curriculum-evidence, reflection-prompt, teacher-adjudication)
-- preModel/postModel hooks run around each model call
-- preTool/postTool hooks run around each tool execution
-- Hook abort terminates loop cleanly
-
-#### Updated System Prompt Assembly
-
-- Position 7: Command-specific framing (if command invoked)
-- Position 8: Commands-available list
-
-### Tests
-
-- **Unit:** Skills/agents discovery parses frontmatter correctly
-- **Unit:** Command routing resolves agent and framing
-- **Unit:** Hook resolution merges agent hooks and caller hooks in order
-- **Unit:** `HookAbortError` terminates loop with correct status
-- **Unit:** Curriculum evidence checker: valid refs pass, invalid refs fail, fabricated outcomes caught
-- **Unit:** Scope check: lesson planning passes, "write me a poem" fails
-- **Integration:** Full flow with feedforward: send chat → get feedforward response → confirm → get model response
-- **Integration:** Full flow with adjudication: model responds → reflection prompts shown → adjudication gate → teacher accepts → final response
-- **Integration:** Adjudication "Revise" → re-enters loop → revised output
-- **Integration:** Hook abort → loop terminates → correct status returned → session saved
-- **Integration:** Command routing → correct agent instructions + command framing in system prompt
-
-### API Summary (additions)
-
-```
-GET    /api/commands
-POST   /api/chat/feedforward-response
-POST   /api/chat/adjudication-response
-```
-
-Updated: `POST /api/chat` accepts `command`, returns interactive states (`awaiting_feedforward`, `awaiting_adjudication`, `awaiting_reflection`)
-
----
-
-## Sprint 5 — Traces + Full Pedagogical Skills
-
-**Goal:** Every agent loop invocation produces a structured trace. All pedagogical skills are authored and tested. Research data infrastructure is in place.
+- [x] SSE streaming for model responses (token by token)
+- [x] Streaming through the agent loop with tool-step SSE events
+- [x] Frontend receives incremental tokens for display
+- [x] Trace still captures complete response after stream finishes
 
 ### Deliverables
 
-#### Trace Infrastructure (`traces.ts`)
-
-- Migration `003_traces.sql`: traces table (id, session_id, teacher_id, agent_name, command, status, started_at, completed_at, total_tokens, total_cost, spans JSONB)
-- Trace creation: every `runAgentLoop` call creates a trace
-- Span types:
-  - `model_call` — provider, model, input/output tokens, cost, stop_reason
-  - `tool_call` — tool name, arguments (redacted if sensitive), result summary, duration
-  - `hook_execution` — hook name, lifecycle point, pass/abort, duration
-  - `skill_load` — skill name, tier, token count
-  - `feedforward` — summary shown, teacher response (confirmed/modified/dismissed)
-  - `reflection` — prompts shown, teacher responses
-  - `adjudication` — section, decision (accept/revise/alternatives), revision text, timestamp
-  - `curriculum_check` — references checked, match results
-- Session ID correlation: every trace references its session
-- `GET /api/traces` — list traces for current teacher (paginated)
-- `GET /api/traces/:id` — get full trace with spans
-- `GET /api/sessions/:id/traces` — traces for a specific session
-
-#### Full Pedagogical Skills
-
-Author all skills specified in the product spec:
-
-- `backward-design/` — SKILL.md + framework.md + examples.md
-- `differentiation/` — SKILL.md + sen-strategies.md + eal-strategies.md + mixed-ability.md
-- `lesson-structure/` — SKILL.md + timings-guide.md
-- `retrieval-practice/` — SKILL.md + techniques.md
-- `cognitive-load/` — SKILL.md + worked-examples.md
-- `formative-assessment/` — SKILL.md + techniques.md
-- `metacognition/` — SKILL.md + strategies.md
-- `designing-for-equity/` — SKILL.md + accessibility-privacy.md
-
-Each skill's SKILL.md includes: description (for manifest), overview, when to use, key concepts, pointers to Tier 3 files.
-
-#### Curriculum Content
-
-- Populate curriculum files for: Computing Science, Maths, English, French, History
-- CfE Es & Os structured with outcome IDs (e.g. `TCH 3-13a`)
-- Course specification documents converted to markdown
-- Progression relationships encoded where applicable
-
-#### Planner Agent Definition
-
-- `agents/planner.md` — full agent definition with frontmatter and instruction body
-- References all skills, workspace files, tools, and hooks
-- Instructions encode the "draft not decide" stance, skill consultation patterns, artefact bundle structure
-
-### Tests
-
-- **Unit:** Trace creation with all span types
-- **Unit:** Trace query by session, by teacher, pagination
-- **Unit:** Each skill's SKILL.md parses valid frontmatter with description
-- **Unit:** Curriculum files contain valid outcome IDs that the evidence checker can verify
-- **Integration:** Full agent loop → trace produced → all spans present → session ID linked
-- **Integration:** Skill loading traced: Tier 2 load → span recorded, Tier 3 load → span recorded
-- **Integration:** Hook executions traced: feedforward, adjudication, curriculum-evidence all produce spans
-- **Agent eval:** Planner agent with full skills produces structured lesson plan for a Computing Science topic. Structural criteria: all required sections present, curriculum references valid, differentiation addressed for ASN-flagged class.
-
-### API Summary (additions)
-
-```
-GET    /api/traces
-GET    /api/traces/:id
-GET    /api/sessions/:id/traces
-```
+- SSE streaming for model responses (token by token)
+- Streaming through the agent loop: model response streams → tool calls detected → tools execute → next model call streams
+- Frontend receives incremental tokens for display
+- Trace still captures complete response after stream finishes
 
 ---
 
-## Sprint 6 — Memory + Session Search
+## Sprint 5 — Memory + Session Search
 
 **Goal:** The system accumulates knowledge from working with teachers. Teacher memory and class memory persist across sessions. Past sessions are searchable. The memory-capture hook proposes session-end updates for teacher confirmation.
+
+### Status (Implemented 2026-03-02)
+
+- [x] Memory storage tables and event log (`memory_files`, `memory_events`)
+- [x] Memory CRUD + virtual path routing + teacher isolation
+- [x] Memory tools (`read_memory`, `update_memory`)
+- [x] Memory injected into prompt assembly (teacher/class, 200-line cap)
+- [x] Memory-capture proposal + decision endpoint (`POST /api/chat/memory-response`)
+- [x] Session search API/tooling (`search_sessions`, `read_session`) with tsvector index
+- [x] Memory API for sidebar (`GET/PUT/DELETE /api/memory/*path`, `GET /api/memory`)
 
 ### Deliverables
 
@@ -651,9 +501,13 @@ DELETE /api/memory/*path
 POST   /api/chat/memory-response
 ```
 
+## Sprint 5.5 - UI Updates
+
+- System prompt should be responded to use markdown formatting for headings, bold, etc knowing these will be rendered client side.
+
 ---
 
-## Sprint 7 — Subagents
+## Sprint 6 — Subagents
 
 **Goal:** The planner agent can spawn subagents to handle specific sub-tasks (e.g. worksheet creation, quiz generation). Subagents run in isolated context and return summaries.
 
@@ -733,7 +587,7 @@ The frontend should render subagent spans in the chat as collapsible sections sh
 
 ---
 
-## Sprint 8 — Handoffs
+## Sprint 7 — Handoffs
 
 **Goal:** Agents can transfer control to a peer agent with structured context injection. Conversation history is preserved. The new agent continues with different expertise.
 
@@ -798,14 +652,187 @@ The frontend should render subagent spans in the chat as collapsible sections sh
 
 ---
 
-## Sprint 9+ — Additional Elements
+## Sprint 8 — Commands + Hooks
 
-### Sprint 9: Streaming
+**Goal:** Commands provide named entry points for tasks (`create-lesson`, `refine-lesson`). Hooks fire at defined lifecycle points (preLoop, postLoop, preModel, postModel, preTool, postTool). The feedforward, reflection, adjudication, and guardrail hooks are implemented.
 
-- SSE streaming for model responses (token by token)
-- Streaming through the agent loop: model response streams → tool calls detected → tools execute → next model call streams
-- Frontend receives incremental tokens for display
-- Trace still captures complete response after stream finishes
+### Deliverables
+
+#### Skills + Agents Discovery (`discovery.ts`)
+
+- Scan workspace root for:
+  - `skills/` (skill definitions)
+  - `agents/` (agent definitions)
+- Parse command markdown frontmatter (agent, description, mode, writes)
+- Parse agent markdown frontmatter (model, provider, workspace, skills, tools, disallowedTools, mcpServers, hooks, maxTurns, maxBudgetUsd, permissionMode)
+
+#### Loop Configuration Surface
+
+- `runAgentLoop` options include:
+  - `maxTurns?: number`
+  - `maxBudgetUsd?: number`
+  - `maxToolRetries?: number`
+  - `maxNoProgressIterations?: number`
+  - `forceFinalizeOnStall?: boolean`
+- Agent frontmatter can optionally override safe defaults for retry/no-progress controls in bounded ranges.
+
+#### Command Routing
+
+- `POST /api/chat` extended: `{ messages, provider?, model?, sessionId?, command? }`
+- When `command` specified (e.g. `"create-lesson"`):
+  - Look up command definition
+  - Load command-specific framing (command markdown body) into system prompt at position 7
+  - Route to the command's specified agent
+  - Apply agent's model/provider if not overridden
+- `GET /api/commands` — list available commands with descriptions
+- Commands-available list added to system prompt at position 8
+
+#### Hook Infrastructure (`hooks.ts`)
+
+- Hook type definitions for each lifecycle point: `preLoop`, `postLoop`, `preModel`, `postModel`, `preTool`, `postTool`
+- Hook resolution: agent definition lists hook names → resolve to backend implementations in `packages/backend/src/hooks/*`
+- Hook execution: run hooks in order, passing context (messages, tool calls, agent state)
+- Hook abort: any hook can throw `HookAbortError(name, reason)` → terminates agent loop with status `error_hook_abort`
+- All hook executions logged (for traces in Sprint 9)
+
+#### Implemented Hooks
+
+**`scope-check` (preLoop):** Validates the request is within lesson-planning domain. Simple keyword/intent check. Aborts with explanation if off-topic.
+
+**`feedforward` (preLoop):** Identifies relevant workspace context (class profile, teacher preferences, curriculum). Composes summary. Returns it to the frontend for confirmation before generation proceeds. This is an interactive hook — it pauses the loop and waits for teacher response.
+
+- API: `POST /api/chat` can return `{ status: 'awaiting_feedforward', feedforward: { summary, contexts } }` instead of a model response
+- Frontend confirms/modifies/dismisses → sends `POST /api/chat/feedforward-response` → loop continues
+
+**`age-appropriate` (postLoop):** Validates output is appropriate for the year group in the class profile. Simple heuristic checks + optional model-as-judge call (Haiku for cost).
+
+**`curriculum-evidence` (postLoop):** Validates curriculum alignment claims include evidence pointers. Checks referenced files exist in workspace, line ranges valid, quoted text matches. Aborts if fabricated outcomes detected.
+
+**`reflection-prompt` (postLoop):** Generates reflection questions based on workspace context and command. Returns to frontend for display before adjudication.
+
+- API: response includes `{ reflectionPrompts: string[] }` in the postLoop phase
+
+**`teacher-adjudication` (postLoop):** Presents Accept/Revise/Generate Alternatives per section. Interactive — pauses for teacher decision.
+
+- API: `POST /api/chat` returns `{ status: 'awaiting_adjudication', sections: [...] }`
+- Frontend sends decisions → `POST /api/chat/adjudication-response`
+- "Revise" re-enters the agent loop with revision instructions
+- "Generate Alternatives" re-enters with alternative generation instructions
+
+#### Updated Agent Loop
+
+- Hooks integrated at all lifecycle points
+- preLoop hooks run before first model call (feedforward, scope-check)
+- postLoop hooks run after final model response (age-appropriate, curriculum-evidence, reflection-prompt, teacher-adjudication)
+- preModel/postModel hooks run around each model call
+- preTool/postTool hooks run around each tool execution
+- Hook abort terminates loop cleanly
+
+#### Updated System Prompt Assembly
+
+- Position 7: Command-specific framing (if command invoked)
+- Position 8: Commands-available list
+
+### Tests
+
+- **Unit:** Skills/agents discovery parses frontmatter correctly
+- **Unit:** Command routing resolves agent and framing
+- **Unit:** Hook resolution merges agent hooks and caller hooks in order
+- **Unit:** `HookAbortError` terminates loop with correct status
+- **Unit:** Curriculum evidence checker: valid refs pass, invalid refs fail, fabricated outcomes caught
+- **Unit:** Scope check: lesson planning passes, "write me a poem" fails
+- **Integration:** Full flow with feedforward: send chat → get feedforward response → confirm → get model response
+- **Integration:** Full flow with adjudication: model responds → reflection prompts shown → adjudication gate → teacher accepts → final response
+- **Integration:** Adjudication "Revise" → re-enters loop → revised output
+- **Integration:** Hook abort → loop terminates → correct status returned → session saved
+- **Integration:** Command routing → correct agent instructions + command framing in system prompt
+
+### API Summary (additions)
+
+```
+GET    /api/commands
+POST   /api/chat/feedforward-response
+POST   /api/chat/adjudication-response
+```
+
+Updated: `POST /api/chat` accepts `command`, returns interactive states (`awaiting_feedforward`, `awaiting_adjudication`, `awaiting_reflection`)
+
+---
+
+## Sprint 9 — Traces + Full Pedagogical Skills
+
+**Goal:** Every agent loop invocation produces a structured trace. All pedagogical skills are authored and tested. Research data infrastructure is in place.
+
+### Deliverables
+
+#### Trace Infrastructure (`traces.ts`)
+
+- Migration `003_traces.sql`: traces table (id, session_id, teacher_id, agent_name, command, status, started_at, completed_at, total_tokens, total_cost, spans JSONB)
+- Trace creation: every `runAgentLoop` call creates a trace
+- Span types:
+  - `model_call` — provider, model, input/output tokens, cost, stop_reason
+  - `tool_call` — tool name, arguments (redacted if sensitive), result summary, duration
+  - `hook_execution` — hook name, lifecycle point, pass/abort, duration
+  - `skill_load` — skill name, tier, token count
+  - `feedforward` — summary shown, teacher response (confirmed/modified/dismissed)
+  - `reflection` — prompts shown, teacher responses
+  - `adjudication` — section, decision (accept/revise/alternatives), revision text, timestamp
+  - `curriculum_check` — references checked, match results
+- Session ID correlation: every trace references its session
+- `GET /api/traces` — list traces for current teacher (paginated)
+- `GET /api/traces/:id` — get full trace with spans
+- `GET /api/sessions/:id/traces` — traces for a specific session
+
+#### Full Pedagogical Skills
+
+Author all skills specified in the product spec:
+
+- `backward-design/` — SKILL.md + framework.md + examples.md
+- `differentiation/` — SKILL.md + sen-strategies.md + eal-strategies.md + mixed-ability.md
+- `lesson-structure/` — SKILL.md + timings-guide.md
+- `retrieval-practice/` — SKILL.md + techniques.md
+- `cognitive-load/` — SKILL.md + worked-examples.md
+- `formative-assessment/` — SKILL.md + techniques.md
+- `metacognition/` — SKILL.md + strategies.md
+- `designing-for-equity/` — SKILL.md + accessibility-privacy.md
+
+Each skill's SKILL.md includes: description (for manifest), overview, when to use, key concepts, pointers to Tier 3 files.
+
+#### Curriculum Content
+
+- Populate curriculum files for: Computing Science, Maths, English, French, History
+- CfE Es & Os structured with outcome IDs (e.g. `TCH 3-13a`)
+- Course specification documents converted to markdown
+- Progression relationships encoded where applicable
+
+#### Planner Agent Definition
+
+- `agents/planner.md` — full agent definition with frontmatter and instruction body
+- References all skills, workspace files, tools, and hooks
+- Instructions encode the "draft not decide" stance, skill consultation patterns, artefact bundle structure
+
+### Tests
+
+- **Unit:** Trace creation with all span types
+- **Unit:** Trace query by session, by teacher, pagination
+- **Unit:** Each skill's SKILL.md parses valid frontmatter with description
+- **Unit:** Curriculum files contain valid outcome IDs that the evidence checker can verify
+- **Integration:** Full agent loop → trace produced → all spans present → session ID linked
+- **Integration:** Skill loading traced: Tier 2 load → span recorded, Tier 3 load → span recorded
+- **Integration:** Hook executions traced: feedforward, adjudication, curriculum-evidence all produce spans
+- **Agent eval:** Planner agent with full skills produces structured lesson plan for a Computing Science topic. Structural criteria: all required sections present, curriculum references valid, differentiation addressed for ASN-flagged class.
+
+### API Summary (additions)
+
+```
+GET    /api/traces
+GET    /api/traces/:id
+GET    /api/sessions/:id/traces
+```
+
+---
+
+## Sprint 10+ — Additional Elements
 
 ### Sprint 10: Eval Framework
 

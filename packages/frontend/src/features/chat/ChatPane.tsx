@@ -1,8 +1,17 @@
-import { useEffect, useMemo, useRef } from "react";
+import {
+  BarChart3,
+  ChevronDown,
+  Loader2,
+  Plus,
+  Send,
+  Square,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { ChatMessage, ChatTrace } from "../../types";
+import type { ChatMessage, ChatTrace, Provider } from "../../types";
 import { displayContextPath } from "../workspace/path-utils";
 import { AssistantMessage } from "./AssistantMessage";
+import { MODEL_OPTIONS } from "./model-options";
 
 type TimelineEntryKind =
   | "user-prompt"
@@ -10,14 +19,18 @@ type TimelineEntryKind =
   | "model-response"
   | "skill-read"
   | "tool-step"
+  | "tool-group"
   | "final-model-response";
 
 interface TimelineEntry {
   id: string;
   kind: TimelineEntryKind;
   message?: ChatMessage;
-  contextPaths?: string[];
+  workspacePaths?: string[];
+  memoryPaths?: string[];
   trace?: ChatTrace;
+  groupLabel?: string;
+  groupMessages?: ChatMessage[];
 }
 
 interface ChatPaneProps {
@@ -25,6 +38,7 @@ interface ChatPaneProps {
   selectedClassRef: string;
   setSelectedClassRef: (value: string) => void;
   contextHistory: string[][];
+  memoryContextHistory: string[][];
   traceHistory: ChatTrace[];
   messages: ChatMessage[];
   chatLoading: boolean;
@@ -34,7 +48,23 @@ interface ChatPaneProps {
   setMessageInput: (value: string) => void;
   focusComposerToken: number;
   sessionLoading: boolean;
+  provider: Provider;
+  model: string;
+  setProvider: (provider: Provider) => void;
+  setModel: (model: string) => void;
+  onInspectSkill: (skillName: string) => void;
+  onInspectWorkspacePath: (path: string) => void;
+  onInspectMemoryPath: (path: string) => void;
+  onInspectPrompt: (prompt: string, label: string) => void;
+  onInspectRawResponse: (content: string, label: string) => void;
   sendMessage: () => Promise<void>;
+  cancelMessage: () => void;
+}
+
+function toolMessageSignature(message: ChatMessage): string {
+  return `${message.toolName ?? "tool"}|${JSON.stringify(
+    message.toolInput ?? {},
+  )}|${message.toolError ? "1" : "0"}|${message.content}`;
 }
 
 function alignByTurn<T>(
@@ -56,6 +86,7 @@ function alignByTurn<T>(
 function buildTimelineEntries(
   messages: ChatMessage[],
   contextHistory: string[][],
+  memoryContextHistory: string[][],
   traceHistory: ChatTrace[],
 ): TimelineEntry[] {
   const entries: TimelineEntry[] = [];
@@ -67,6 +98,11 @@ function buildTimelineEntries(
   const contextsByTurn = alignByTurn<string[]>(
     userIndices.length,
     contextHistory,
+    [],
+  );
+  const memoryByTurn = alignByTurn<string[]>(
+    userIndices.length,
+    memoryContextHistory,
     [],
   );
   const tracesByTurn = alignByTurn<ChatTrace | undefined>(
@@ -86,13 +122,17 @@ function buildTimelineEntries(
       message: userMessage,
     });
 
-    const contextPaths = contextsByTurn[turnIndex];
-    if (contextPaths.length > 0) {
+    const workspacePaths = contextsByTurn[turnIndex];
+    const memoryPaths = memoryByTurn[turnIndex];
+    const turnTrace = tracesByTurn[turnIndex];
+
+    if (workspacePaths.length > 0 || memoryPaths.length > 0) {
       entries.push({
         id: `turn-${turnIndex}-context`,
         kind: "context-added",
-        contextPaths,
-        trace: tracesByTurn[turnIndex],
+        workspacePaths,
+        memoryPaths,
+        trace: turnTrace,
       });
     }
 
@@ -113,18 +153,96 @@ function buildTimelineEntries(
     const firstToolPosition = toolPositions[0] ?? -1;
     const lastToolPosition = toolPositions[toolPositions.length - 1] ?? -1;
 
-    turnMessages.forEach((message, turnMessageIndex) => {
+    const toolGroupCategory = (
+      message: ChatMessage,
+    ): "skills" | "files" | "other" => {
+      if (message.toolName === "read_skill") {
+        return "skills";
+      }
+      if (
+        message.toolName === "read_file" ||
+        message.toolName === "list_directory" ||
+        message.toolName === "write_file" ||
+        message.toolName === "str_replace"
+      ) {
+        return "files";
+      }
+      return "other";
+    };
+
+    const toolGroupLabel = (category: "skills" | "files" | "other"): string => {
+      if (category === "skills") {
+        return "Reading skills";
+      }
+      if (category === "files") {
+        return "Exploring files";
+      }
+      return "Using tools";
+    };
+
+    for (
+      let turnMessageIndex = 0;
+      turnMessageIndex < turnMessages.length;
+      turnMessageIndex += 1
+    ) {
+      const message = turnMessages[turnMessageIndex];
+
       if (message.role === "tool") {
+        const start = turnMessageIndex;
+        const firstCategory = toolGroupCategory(message);
+        const groupedMessages: ChatMessage[] = [message];
+        let end = start;
+
+        for (
+          let lookahead = start + 1;
+          lookahead < turnMessages.length;
+          lookahead += 1
+        ) {
+          const nextMessage = turnMessages[lookahead];
+          if (nextMessage.role !== "tool") {
+            break;
+          }
+          if (toolGroupCategory(nextMessage) !== firstCategory) {
+            break;
+          }
+          groupedMessages.push(nextMessage);
+          end = lookahead;
+        }
+
+        const dedupedGroupedMessages = groupedMessages.filter(
+          (candidate, index, list) =>
+            index === 0 ||
+            toolMessageSignature(candidate) !==
+              toolMessageSignature(list[index - 1]),
+        );
+
+        if (dedupedGroupedMessages.length > 1 && firstCategory !== "other") {
+          entries.push({
+            id: `turn-${turnIndex}-tool-group-${start}`,
+            kind: "tool-group",
+            groupLabel: toolGroupLabel(firstCategory),
+            groupMessages: dedupedGroupedMessages,
+            trace: turnTrace,
+          });
+          turnMessageIndex = end;
+          continue;
+        }
+
+        const messageToRender = dedupedGroupedMessages[0] ?? message;
         entries.push({
           id: `turn-${turnIndex}-tool-${turnMessageIndex}`,
-          kind: message.toolName === "read_skill" ? "skill-read" : "tool-step",
-          message,
+          kind:
+            messageToRender.toolName === "read_skill"
+              ? "skill-read"
+              : "tool-step",
+          message: messageToRender,
+          trace: turnTrace,
         });
-        return;
+        continue;
       }
 
-      if (message.role !== "assistant") {
-        return;
+      if (message.role !== "assistant" && message.role !== "system") {
+        continue;
       }
 
       const hasTools = toolPositions.length > 0;
@@ -139,55 +257,28 @@ function buildTimelineEntries(
             ? "model-response"
             : "final-model-response",
         message,
-        trace: tracesByTurn[turnIndex],
+        trace: turnTrace,
       });
-    });
+    }
   }
 
   return entries;
 }
 
-function bubbleClasses(kind: TimelineEntryKind): string {
+function entryContainerClasses(kind: TimelineEntryKind): string {
   if (kind === "user-prompt") {
-    return "ml-auto bg-accent-600 text-white";
+    return "ml-auto max-w-[85%] bg-accent-500 text-white";
   }
 
   if (kind === "final-model-response") {
-    return "bg-[#d3f5ef] text-ink-900";
+    return "mr-auto max-w-[90%] bg-paper-100";
   }
 
   if (kind === "model-response") {
-    return "ml-4 bg-[#e9fbf7] text-ink-900 opacity-90";
+    return "mr-auto max-w-[90%] bg-surface-muted";
   }
 
-  if (
-    kind === "context-added" ||
-    kind === "skill-read" ||
-    kind === "tool-step"
-  ) {
-    return "ml-4 bg-[#f4ead8] text-ink-900 opacity-90";
-  }
-
-  return "bg-paper-50 text-ink-900";
-}
-
-function bubbleLabel(kind: TimelineEntryKind): string {
-  if (kind === "user-prompt") {
-    return "User prompt";
-  }
-  if (kind === "context-added") {
-    return "Context added";
-  }
-  if (kind === "model-response") {
-    return "Model response";
-  }
-  if (kind === "skill-read") {
-    return "Skill read";
-  }
-  if (kind === "final-model-response") {
-    return "Final model response";
-  }
-  return "Tool step";
+  return "mr-auto max-w-[90%] bg-paper-100";
 }
 
 function toolPreview(message: ChatMessage): string {
@@ -196,16 +287,67 @@ function toolPreview(message: ChatMessage): string {
       typeof message.toolInput?.target === "string"
         ? message.toolInput.target
         : "skill";
-    return `read_skill ${target}`;
+    return `Read Skill: ${target}`;
   }
 
-  if (message.toolName === "read_file" || message.toolName === "write_file") {
+  if (message.toolName === "read_file") {
     const path =
       typeof message.toolInput?.path === "string" ? message.toolInput.path : "";
-    return `${message.toolName}${path ? ` ${path}` : ""}`;
+    return `Read File${path ? `: ${path}` : ""}`;
   }
 
-  return message.toolName ?? "tool";
+  if (message.toolName === "write_file") {
+    const path =
+      typeof message.toolInput?.path === "string" ? message.toolInput.path : "";
+    return `Write File${path ? `: ${path}` : ""}`;
+  }
+
+  return `${message.toolName ?? "tool"}`;
+}
+
+function skillTarget(message: ChatMessage): string | null {
+  const target = message.toolInput?.target;
+  return typeof target === "string" ? target : null;
+}
+
+function readFilePath(message: ChatMessage): string | null {
+  if (message.toolName !== "read_file") {
+    return null;
+  }
+  const path = message.toolInput?.path;
+  return typeof path === "string" ? path : null;
+}
+
+function isMemoryPath(path: string): boolean {
+  return path === "MEMORY.md" || path.endsWith("/MEMORY.md");
+}
+
+function summaryText(entry: TimelineEntry, pending: boolean): string {
+  if (pending) {
+    return "Thinking...";
+  }
+
+  if (entry.kind === "context-added") {
+    return "Prompt Embellished: Context added";
+  }
+
+  if (entry.kind === "skill-read" || entry.kind === "tool-step") {
+    return entry.message ? toolPreview(entry.message) : "Tool executed";
+  }
+
+  if (entry.kind === "tool-group") {
+    return entry.groupLabel ?? "Using tools";
+  }
+
+  if (entry.kind === "model-response") {
+    return "Drafting response";
+  }
+
+  if (entry.kind === "final-model-response") {
+    return "Assistant response";
+  }
+
+  return entry.message?.content || "User prompt";
 }
 
 function isPendingFinalResponseEntry(
@@ -220,10 +362,30 @@ function isPendingFinalResponseEntry(
 
   return (
     entry.kind === "final-model-response" &&
-    entry.message?.role === "assistant" &&
-    !entry.message.content.trim() &&
+    entry.message?.role !== "user" &&
     entryIndex === entries.length - 1
   );
+}
+
+function tokensTitle(trace?: ChatTrace): string {
+  if (!trace) {
+    return "No token data";
+  }
+
+  return `Prompt: ${trace.usage.inputTokens}, Response: ${trace.usage.outputTokens}, Total: ${trace.usage.totalTokens}`;
+}
+
+function promptLabel(trace: ChatTrace): string {
+  const timestamp = new Date(trace.createdAt).toLocaleString();
+  return `System prompt (${timestamp})`;
+}
+
+function responseLabel(trace?: ChatTrace): string {
+  if (!trace) {
+    return "Raw response";
+  }
+  const timestamp = new Date(trace.createdAt).toLocaleString();
+  return `Raw response (${timestamp})`;
 }
 
 export default function ChatPane({
@@ -231,6 +393,7 @@ export default function ChatPane({
   selectedClassRef,
   setSelectedClassRef,
   contextHistory,
+  memoryContextHistory,
   traceHistory,
   messages,
   chatLoading,
@@ -240,12 +403,56 @@ export default function ChatPane({
   setMessageInput,
   focusComposerToken,
   sessionLoading,
+  provider,
+  model,
+  setProvider,
+  setModel,
+  onInspectSkill,
+  onInspectWorkspacePath,
+  onInspectMemoryPath,
+  onInspectPrompt,
+  onInspectRawResponse,
   sendMessage,
+  cancelMessage,
 }: ChatPaneProps) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+
+  const resizeComposer = useCallback(() => {
+    const composer = composerRef.current;
+    if (!composer) {
+      return;
+    }
+    composer.style.height = "auto";
+    composer.style.height = `${Math.min(composer.scrollHeight, 240)}px`;
+  }, []);
+
   const entries = useMemo(
-    () => buildTimelineEntries(messages, contextHistory, traceHistory),
-    [messages, contextHistory, traceHistory],
+    () =>
+      buildTimelineEntries(
+        messages,
+        contextHistory,
+        memoryContextHistory,
+        traceHistory,
+      ),
+    [messages, contextHistory, memoryContextHistory, traceHistory],
+  );
+
+  const freshSlate = entries.length === 0 && !chatLoading;
+  const composerExpanded =
+    isComposerFocused || Boolean(messageInput.trim()) || chatLoading;
+  const latestEntryId = entries.at(-1)?.id ?? "";
+  const inspectFilePath = useCallback(
+    (path: string) => {
+      if (isMemoryPath(path)) {
+        onInspectMemoryPath(path);
+        return;
+      }
+      onInspectWorkspacePath(path);
+    },
+    [onInspectMemoryPath, onInspectWorkspacePath],
   );
 
   useEffect(() => {
@@ -253,213 +460,463 @@ export default function ChatPane({
     const timer = window.setTimeout(() => {
       if (token >= 0) {
         composerRef.current?.focus();
+        resizeComposer();
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [focusComposerToken]);
+  }, [focusComposerToken, resizeComposer]);
+
+  useEffect(() => {
+    const element = timelineRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateStickiness = () => {
+      const distanceToBottom =
+        element.scrollHeight - element.scrollTop - element.clientHeight;
+      shouldAutoScrollRef.current = distanceToBottom < 48;
+    };
+
+    updateStickiness();
+    element.addEventListener("scroll", updateStickiness);
+    return () => element.removeEventListener("scroll", updateStickiness);
+  }, []);
+
+  useEffect(() => {
+    const element = timelineRef.current;
+    if (!element || !shouldAutoScrollRef.current) {
+      return;
+    }
+    if (!latestEntryId && !chatLoading) {
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+  }, [latestEntryId, chatLoading]);
 
   return (
-    <div className="flex h-[70vh] min-h-0 flex-col">
-      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-paper-100 p-2">
-        <label className="text-xs text-ink-800" htmlFor="classRef">
-          Class context
-        </label>
-        <select
-          id="classRef"
-          className="rounded border border-paper-100 px-2 py-1 text-xs"
-          value={selectedClassRef}
-          onChange={(event) => setSelectedClassRef(event.target.value)}
+    <div
+      className={`flex h-full min-h-0 flex-col ${freshSlate ? "justify-center" : ""}`}
+    >
+      {!freshSlate ? (
+        <div
+          ref={timelineRef}
+          className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-paper-300 bg-surface-muted p-3"
         >
-          <option value="">Auto-detect</option>
-          {classRefs.map((ref) => (
-            <option key={ref} value={ref}>
-              {ref}
-            </option>
-          ))}
-        </select>
-      </div>
+          {entries.map((entry, entryIndex) => {
+            const isPendingFinalResponse = isPendingFinalResponseEntry(
+              entry,
+              entryIndex,
+              entries,
+              chatLoading,
+            );
 
-      <div className="mb-4 flex-1 space-y-3 overflow-y-auto rounded-lg border border-paper-100 p-3">
-        {entries.map((entry, entryIndex) => {
-          const isPendingFinalResponse = isPendingFinalResponseEntry(
-            entry,
-            entryIndex,
-            entries,
-            chatLoading,
-          );
+            if (entry.kind === "user-prompt") {
+              return (
+                <div
+                  key={entry.id}
+                  className={`rounded-2xl border px-3 py-2 text-sm ${entryContainerClasses(entry.kind)}`}
+                >
+                  <p className="whitespace-pre-wrap text-sm">
+                    {entry.message?.content}
+                  </p>
+                </div>
+              );
+            }
 
-          return (
-            <details
-              key={entry.id}
-              className={`max-w-[88%] rounded-xl px-3 py-2 text-sm ${bubbleClasses(entry.kind)}`}
-            >
-              <summary className="cursor-pointer list-none">
-                <p className="text-xs font-semibold tracking-wide">
-                  {isPendingFinalResponse
-                    ? "Thinking"
-                    : bubbleLabel(entry.kind)}
-                </p>
-                {entry.message ? (
-                  <p className="mt-1 whitespace-pre-wrap text-sm">
+            if (entry.kind === "final-model-response") {
+              return (
+                <section
+                  key={entry.id}
+                  className={`mr-auto max-w-[90%] rounded-2xl border px-3 py-2 text-sm ${entryContainerClasses(entry.kind)}`}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-ink-900">
+                      {summaryText(entry, isPendingFinalResponse)}
+                    </p>
                     {isPendingFinalResponse ? (
-                      <span className="inline-flex items-center gap-2">
-                        <span
-                          className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-900/30 border-t-ink-900"
-                          aria-hidden
-                        />
-                        <span>Thinking...</span>
+                      <Loader2 className="h-4 w-4 animate-spin text-ink-700" />
+                    ) : null}
+                    {entry.trace ? (
+                      <span
+                        aria-label={tokensTitle(entry.trace)}
+                        title={tokensTitle(entry.trace)}
+                      >
+                        <BarChart3 className="h-4 w-4 text-ink-700" />
                       </span>
-                    ) : entry.kind === "skill-read" ||
-                      entry.kind === "tool-step" ? (
-                      toolPreview(entry.message)
-                    ) : entry.kind === "final-model-response" ? (
-                      entry.message.content || "(empty)"
+                    ) : null}
+                    {entry.trace ? (
+                      <button
+                        className="rounded border border-paper-300 px-2 py-0.5 text-[11px] text-ink-700 hover:border-accent-500"
+                        type="button"
+                        onClick={() =>
+                          onInspectPrompt(
+                            entry.trace?.systemPrompt ?? "",
+                            promptLabel(entry.trace),
+                          )
+                        }
+                      >
+                        View full prompt
+                      </button>
+                    ) : null}
+                    <button
+                      className="rounded border border-paper-300 px-2 py-0.5 text-[11px] text-ink-700 hover:border-accent-500"
+                      type="button"
+                      onClick={() =>
+                        onInspectRawResponse(
+                          entry.message?.content ?? "",
+                          responseLabel(entry.trace),
+                        )
+                      }
+                    >
+                      View raw response
+                    </button>
+                  </div>
+                  {entry.message?.role === "assistant" ||
+                  entry.message?.role === "system" ? (
+                    <AssistantMessage
+                      content={
+                        chatLoading && entryIndex === entries.length - 1
+                          ? `${entry.message.content}▋`
+                          : entry.message.content
+                      }
+                    />
+                  ) : null}
+                </section>
+              );
+            }
+
+            if (
+              entry.kind === "context-added" ||
+              entry.kind === "skill-read" ||
+              entry.kind === "tool-step" ||
+              entry.kind === "tool-group" ||
+              entry.kind === "model-response"
+            ) {
+              const plainSummary = summaryText(
+                entry,
+                isPendingFinalResponse,
+              ).toLowerCase();
+              return (
+                <details
+                  key={entry.id}
+                  className="mr-auto max-w-[90%] text-xs text-ink-700"
+                >
+                  <summary className="flex cursor-pointer list-none items-center gap-1">
+                    <span className="min-w-0 truncate">{plainSummary}</span>
+                    {entry.trace ? (
+                      <span
+                        aria-label={tokensTitle(entry.trace)}
+                        title={tokensTitle(entry.trace)}
+                      >
+                        <BarChart3 className="h-3 w-3 text-ink-700/70" />
+                      </span>
+                    ) : null}
+                    {isPendingFinalResponse ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-ink-700/70" />
                     ) : (
-                      entry.message.content.slice(0, 160) || "(empty)"
+                      <ChevronDown className="h-3 w-3 text-ink-700/70" />
                     )}
-                  </p>
-                ) : (
-                  <p className="mt-1 whitespace-pre-wrap text-sm">
-                    Context loaded for this prompt.
-                  </p>
-                )}
-              </summary>
-              <div className="mt-2 space-y-2 rounded-lg border border-paper-100/60 bg-white/60 p-2">
-                {entry.kind === "context-added" ? (
-                  <>
-                    <div>
-                      <p className="text-xs font-semibold">Context Files</p>
-                      <ul className="mt-1 list-disc pl-4 text-xs">
-                        {(entry.contextPaths ?? []).map((path) => (
-                          <li key={path}>{displayContextPath(path)}</li>
+                  </summary>
+                  <div className="mt-1 border-l border-paper-300 pl-2">
+                    {entry.kind === "context-added" ? (
+                      <div className="space-y-2 text-xs">
+                        {entry.trace ? (
+                          <button
+                            className="rounded border border-paper-300 px-2 py-0.5 text-[11px] hover:border-accent-500"
+                            type="button"
+                            onClick={() =>
+                              onInspectPrompt(
+                                entry.trace?.systemPrompt ?? "",
+                                promptLabel(entry.trace),
+                              )
+                            }
+                          >
+                            View full prompt
+                          </button>
+                        ) : null}
+                        <div>
+                          <p className="font-semibold">Workspace context</p>
+                          <ul className="mt-1 list-disc pl-4">
+                            {(entry.workspacePaths ?? []).map((path) => (
+                              <li key={path}>
+                                <button
+                                  className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                                  type="button"
+                                  onClick={() => onInspectWorkspacePath(path)}
+                                >
+                                  {displayContextPath(path)}
+                                </button>
+                              </li>
+                            ))}
+                            {(entry.workspacePaths ?? []).length === 0 ? (
+                              <li>None</li>
+                            ) : null}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-semibold">
+                            From previous sessions
+                          </p>
+                          <ul className="mt-1 list-disc pl-4">
+                            {(entry.memoryPaths ?? []).map((path) => (
+                              <li key={path}>
+                                <button
+                                  className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                                  type="button"
+                                  onClick={() => onInspectMemoryPath(path)}
+                                >
+                                  {displayContextPath(path)}
+                                </button>
+                              </li>
+                            ))}
+                            {(entry.memoryPaths ?? []).length === 0 ? (
+                              <li>None</li>
+                            ) : null}
+                          </ul>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {entry.kind === "tool-group" ? (
+                      <ul className="space-y-1 text-xs">
+                        {(entry.groupMessages ?? []).map((message, index) => (
+                          <li key={`${entry.id}-group-${index}`}>
+                            {message.toolName === "read_skill" &&
+                            skillTarget(message) ? (
+                              <button
+                                className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                                type="button"
+                                onClick={() =>
+                                  onInspectSkill(skillTarget(message) ?? "")
+                                }
+                              >
+                                {toolPreview(message).toLowerCase()}
+                              </button>
+                            ) : readFilePath(message) ? (
+                              <button
+                                className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                                type="button"
+                                onClick={() =>
+                                  inspectFilePath(readFilePath(message) ?? "")
+                                }
+                              >
+                                {toolPreview(message).toLowerCase()}
+                              </button>
+                            ) : (
+                              toolPreview(message).toLowerCase()
+                            )}
+                          </li>
                         ))}
                       </ul>
-                    </div>
-                    {entry.trace ? (
-                      <>
-                        <div className="space-y-1 text-xs text-ink-800">
-                          <p className="font-semibold">Call Tokens</p>
-                          <p>Prompt tokens: {entry.trace.usage.inputTokens}</p>
-                          <p>
-                            Response tokens: {entry.trace.usage.outputTokens}
-                          </p>
-                          <p>Total tokens: {entry.trace.usage.totalTokens}</p>
-                        </div>
-                        <details className="rounded border border-paper-100 bg-white p-2">
-                          <summary className="cursor-pointer font-medium">
-                            Full prompt
-                          </summary>
-                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap">
-                            {entry.trace.systemPrompt}
-                          </pre>
-                        </details>
-                      </>
                     ) : null}
-                  </>
-                ) : null}
 
-                {isPendingFinalResponse ? (
-                  <p className="inline-flex items-center gap-2 whitespace-pre-wrap text-sm">
-                    <span
-                      className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-900/30 border-t-ink-900"
-                      aria-hidden
-                    />
-                    <span>Thinking...</span>
-                  </p>
-                ) : null}
-
-                {entry.message?.role === "assistant" &&
-                !isPendingFinalResponse ? (
-                  <AssistantMessage content={entry.message.content} />
-                ) : null}
-
-                {entry.message?.role === "user" ? (
-                  <p className="whitespace-pre-wrap text-sm">
-                    {entry.message.content}
-                  </p>
-                ) : null}
-
-                {entry.message?.role === "tool" ? (
-                  <div className="space-y-2 text-xs">
-                    <div>
-                      <p className="font-semibold">Tool</p>
-                      <p>{entry.message.toolName ?? "tool"}</p>
-                      {entry.message.toolError ? (
-                        <p className="text-red-700">Execution error</p>
-                      ) : null}
-                    </div>
-                    <div>
-                      <p className="font-semibold">Arguments</p>
-                      <pre className="overflow-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2">
-                        {JSON.stringify(entry.message.toolInput ?? {}, null, 2)}
-                      </pre>
-                    </div>
-                    <div>
-                      <p className="font-semibold">Result</p>
-                      <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2">
-                        {entry.message.content}
-                      </pre>
-                    </div>
+                    {(entry.kind === "skill-read" ||
+                      entry.kind === "tool-step") &&
+                    entry.message?.role === "tool" ? (
+                      <div className="space-y-2 text-xs">
+                        <div>
+                          <p className="font-semibold">Tool</p>
+                          {entry.message.toolName === "read_skill" &&
+                          skillTarget(entry.message) ? (
+                            <button
+                              className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                              type="button"
+                              onClick={() =>
+                                onInspectSkill(skillTarget(entry.message) ?? "")
+                              }
+                            >
+                              {entry.message.toolName}
+                            </button>
+                          ) : readFilePath(entry.message) ? (
+                            <button
+                              className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                              type="button"
+                              onClick={() =>
+                                inspectFilePath(
+                                  readFilePath(entry.message) ?? "",
+                                )
+                              }
+                            >
+                              {entry.message.toolName}
+                            </button>
+                          ) : (
+                            <p>{entry.message.toolName ?? "tool"}</p>
+                          )}
+                          {entry.message.toolError ? (
+                            <p className="text-danger-700">Execution error</p>
+                          ) : null}
+                        </div>
+                        <div>
+                          <p className="font-semibold">Arguments</p>
+                          <pre className="overflow-auto whitespace-pre-wrap rounded border border-paper-300 bg-surface-panel p-2">
+                            {JSON.stringify(
+                              entry.message.toolInput ?? {},
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </div>
+                        {readFilePath(entry.message) ? null : (
+                          <div>
+                            <p className="font-semibold">Result</p>
+                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-paper-300 bg-surface-panel p-2">
+                              {entry.message.content}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-
-                {entry.kind === "final-model-response" && entry.trace ? (
-                  <div className="space-y-1 text-xs text-ink-800">
-                    <p className="font-semibold">Call Details</p>
-                    <p>Status: {entry.trace.status}</p>
-                    <p>Prompt tokens: {entry.trace.usage.inputTokens}</p>
-                    <p>Response tokens: {entry.trace.usage.outputTokens}</p>
-                    <p>Total tokens: {entry.trace.usage.totalTokens}</p>
-                  </div>
-                ) : null}
-              </div>
-            </details>
-          );
-        })}
-        {chatLoading ? (
-          <p className="text-sm text-ink-800">Assistant is responding...</p>
-        ) : null}
-        {entries.length === 0 ? (
-          <p className="text-sm text-ink-800">Start a conversation to begin.</p>
-        ) : null}
-      </div>
+                </details>
+              );
+            }
+            return null;
+          })}
+        </div>
+      ) : (
+        <div />
+      )}
 
       {(chatError || sessionError) && (
-        <p className="mb-2 text-sm text-red-700">{chatError ?? sessionError}</p>
+        <p className="mt-2 text-sm text-danger-700">
+          {chatError ?? sessionError}
+        </p>
       )}
 
       <form
-        className="flex gap-2"
+        className={`mx-auto mt-3 w-full ${freshSlate ? "max-w-3xl" : "max-w-5xl"}`}
         onSubmit={(event) => {
           event.preventDefault();
-          void sendMessage();
+          if (chatLoading) {
+            cancelMessage();
+          } else {
+            void sendMessage();
+          }
         }}
       >
-        <textarea
-          ref={composerRef}
-          className="min-h-24 flex-1 rounded-lg border border-paper-100 px-3 py-2"
-          placeholder="Type your message..."
-          value={messageInput}
-          onChange={(event) => setMessageInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              void sendMessage();
-            }
+        <div
+          className="grid border border-paper-300 bg-surface-main p-2.5 shadow-sm transition-all duration-200"
+          style={{
+            borderRadius: "28px",
+            gridTemplateColumns: "auto minmax(0,1fr) auto",
+            gridTemplateAreas: composerExpanded
+              ? "'primary primary primary' 'leading footer trailing'"
+              : "'leading primary trailing' 'leading footer trailing'",
           }}
-          disabled={chatLoading || sessionLoading}
-        />
-        <button
-          className="rounded-lg bg-accent-600 px-4 py-2 font-medium text-white disabled:opacity-60"
-          type="submit"
-          disabled={chatLoading || sessionLoading || !messageInput.trim()}
         >
-          Send
-        </button>
+          <div className="flex items-end pb-1" style={{ gridArea: "leading" }}>
+            <button
+              type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-paper-300 bg-surface-panel text-ink-700 transition hover:border-accent-500 hover:text-accent-600"
+              aria-label="Add files and more"
+              disabled
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+
+          <textarea
+            ref={composerRef}
+            rows={1}
+            className="w-full min-h-[2.5rem] resize-none overflow-y-auto bg-transparent px-3 py-2 leading-6 outline-none"
+            placeholder="Type your message..."
+            value={messageInput}
+            onChange={(event) => {
+              setMessageInput(event.target.value);
+              resizeComposer();
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            onFocus={() => setIsComposerFocused(true)}
+            onBlur={() => setIsComposerFocused(false)}
+            disabled={chatLoading || sessionLoading}
+            style={{ gridArea: "primary" }}
+          />
+
+          <div
+            className="flex items-end justify-end pb-1"
+            style={{ gridArea: "trailing" }}
+          >
+            <button
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-600 text-surface-panel disabled:opacity-60"
+              type="submit"
+              aria-label={chatLoading ? "Stop generation" : "Send message"}
+              disabled={
+                sessionLoading || (!chatLoading && !messageInput.trim())
+              }
+            >
+              {chatLoading ? (
+                <Square className="h-4 w-4 fill-current" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+
+          <div
+            className={`mt-1 overflow-x-auto transition-all duration-200 ${composerExpanded ? "opacity-100" : "opacity-85"}`}
+            style={{ gridArea: "footer" }}
+          >
+            <div className="flex min-w-fit items-center gap-2 px-1 text-xs text-ink-700">
+              <label className="sr-only" htmlFor="provider">
+                Provider
+              </label>
+              <select
+                id="provider"
+                className="rounded-full border border-paper-300 bg-surface-panel px-3 py-1 text-xs"
+                value={provider}
+                onChange={(event) =>
+                  setProvider(event.target.value as Provider)
+                }
+              >
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+
+              <label className="sr-only" htmlFor="model">
+                Model
+              </label>
+              <select
+                id="model"
+                className="rounded-full border border-paper-300 bg-surface-panel px-3 py-1 text-xs"
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+              >
+                {MODEL_OPTIONS[provider].map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+
+              <label className="sr-only" htmlFor="classRef">
+                Class context
+              </label>
+              <select
+                id="classRef"
+                className="rounded-full border border-paper-300 bg-surface-panel px-3 py-1 text-xs"
+                value={selectedClassRef}
+                onChange={(event) => setSelectedClassRef(event.target.value)}
+              >
+                <option value="">Auto-detect</option>
+                {classRefs.map((ref) => (
+                  <option key={ref} value={ref}>
+                    {ref}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
       </form>
     </div>
   );

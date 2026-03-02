@@ -34,6 +34,7 @@ cd ../backend && bun test
 
 - Why critical:
   - Wrong provider/model breaks evaluation and cost/control expectations.
+  - Controls now live below the composer, so layout refactors can accidentally break wiring.
 - Tests:
   - `packages/frontend/src/app.auth-chat.test.tsx`
     - `uses selected provider and model for chat requests`
@@ -42,6 +43,7 @@ cd ../backend && bun test
 
 - Why critical:
   - Class-specific planning depends on correct `classRef` propagation.
+  - `classRef` control now shares the same row as provider/model under the composer.
 - Tests:
   - `packages/frontend/src/app.auth-chat.test.tsx`
     - `passes selected class reference to chat API`
@@ -78,7 +80,19 @@ cd ../backend && bun test
 - Tests:
   - `packages/frontend/src/app.auth-chat.test.tsx`
     - `renders tool call blocks and marks loaded skill as active`
+    - `loads full skill file from the skills section`
+    - `collapses and expands sidebar sections from their headers`
     - `renders assistant lesson sections as distinct blocks`
+
+### 7. Memory UI and capture decisions
+
+- Why critical:
+  - Sprint 5 depends on teacher-approved memory persistence and editable memory files.
+- Tests:
+  - `packages/frontend/src/app.auth-chat.test.tsx`
+    - `handles login and streams chat response on Enter` (stream + state stability)
+  - `packages/frontend/src/app.workspace.test.tsx`
+    - `opens workspace file and shows context indicator metadata` (context rendering path; includes memory context split in UI)
 
 ## Backend Critical Paths
 
@@ -212,12 +226,12 @@ cd ../backend && bun test
 ### 13. Memory prioritization and consolidation
 
 - Why critical:
-  - Long-term quality depends on retrieving the right memory under token limits and promoting only high-signal learnings.
+  - Long-term quality depends on retrieving the right memory and preserving teacher isolation.
 - Tests:
   - `packages/backend/tests/memory.test.ts`
-    - `ranks memory candidates by relevance importance recency and access`
-    - `applies token-budget memory selection while keeping high-priority constraints`
-    - `consolidates short-term memory to long-term with session and trace provenance`
+    - `isolates memory files by teacher`
+    - `truncates loaded memory context to 200 lines`
+    - `searches sessions by keyword and class filter`
 
 ## Notes
 

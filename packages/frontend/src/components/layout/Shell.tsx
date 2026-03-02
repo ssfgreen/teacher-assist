@@ -1,45 +1,86 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 interface ShellProps {
-  header: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
 }
 
+const MIN_SIDEBAR_PERCENT = 15;
+const MAX_SIDEBAR_PERCENT = 35;
+const DEFAULT_SIDEBAR_PERCENT = 20;
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(MAX_SIDEBAR_PERCENT, Math.max(MIN_SIDEBAR_PERCENT, width));
+}
+
 export default function Shell({
-  header,
   sidebar,
   children,
   sidebarOpen,
   onToggleSidebar,
 }: ShellProps) {
+  const [sidebarWidthPercent, setSidebarWidthPercent] = useState(
+    DEFAULT_SIDEBAR_PERCENT,
+  );
+  const isDraggingRef = useRef(false);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isDraggingRef.current) {
+        return;
+      }
+      const width = (event.clientX / window.innerWidth) * 100;
+      setSidebarWidthPercent(clampSidebarWidth(width));
+    };
+
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-paper-50 text-ink-900">
-      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-4 sm:px-6">
-        <header className="mb-4 rounded-2xl border border-paper-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 lg:hidden">
+    <div className="h-screen bg-surface-app text-ink-900">
+      <div className="mx-auto flex h-full w-full max-w-[1680px] p-2 sm:p-3">
+        <aside
+          className={`h-full border border-paper-200 bg-surface-sidebar ${sidebarOpen ? "block" : "hidden"} lg:block`}
+          style={{ width: `${sidebarWidthPercent}%` }}
+        >
+          <div className="h-full min-h-0">{sidebar}</div>
+        </aside>
+
+        {sidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Resize sidebar"
+            className="hidden h-full w-1 cursor-col-resize bg-paper-300 transition hover:bg-accent-500 lg:block"
+            onPointerDown={() => {
+              isDraggingRef.current = true;
+            }}
+          />
+        ) : null}
+
+        <main className="min-h-0 flex-1 border border-paper-200 bg-surface-main p-4">
+          <div className="mb-2 lg:hidden">
             <button
-              className="rounded-lg border border-paper-100 px-3 py-1 text-sm"
+              className="rounded-lg border border-paper-300 px-3 py-1 text-sm"
               onClick={onToggleSidebar}
               type="button"
             >
-              {sidebarOpen ? "Hide sessions" : "Show sessions"}
+              {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             </button>
           </div>
-          {header}
-        </header>
-        <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[300px_1fr]">
-          <aside
-            className={`rounded-2xl border border-paper-100 bg-white p-4 shadow-sm ${sidebarOpen ? "block" : "hidden"} lg:block`}
-          >
-            {sidebar}
-          </aside>
-          <main className="rounded-2xl border border-paper-100 bg-white p-4 shadow-sm">
-            {children}
-          </main>
-        </div>
+          <div className="h-[calc(100%-2.25rem)] lg:h-full">{children}</div>
+        </main>
       </div>
     </div>
   );

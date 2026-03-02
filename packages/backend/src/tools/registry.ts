@@ -1,3 +1,4 @@
+import { readMemoryFile, searchSessions, upsertMemoryFile } from "../memory";
 import { readSession, updateSessionTasks } from "../store";
 import type { ModelToolDefinition, SessionTask, ToolCall } from "../types";
 import {
@@ -228,6 +229,123 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       }
       const loaded = readSkillByTarget(target);
       return `Skill: ${loaded.path}\nTier: ${loaded.tier}\n\n${loaded.content}`;
+    },
+  },
+  {
+    name: "read_memory",
+    description: "Read a memory file by virtual path.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+    handler: async (args, context) => {
+      const path = String(args.path || "").trim();
+      if (!path) {
+        throw new Error("path is required");
+      }
+      return readMemoryFile(context.teacherId, path, {
+        sessionId: context.sessionId,
+      });
+    },
+  },
+  {
+    name: "update_memory",
+    description:
+      "Update a memory file by virtual path. Mode: replace or append.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" },
+        mode: { type: "string", enum: ["replace", "append"] },
+      },
+      required: ["path", "content"],
+      additionalProperties: false,
+    },
+    handler: async (args, context) => {
+      const path = String(args.path || "").trim();
+      const content = String(args.content || "");
+      const mode = String(args.mode || "replace");
+      if (!path) {
+        throw new Error("path is required");
+      }
+      if (mode !== "replace" && mode !== "append") {
+        throw new Error("mode must be replace or append");
+      }
+      const updated = await upsertMemoryFile({
+        teacherId: context.teacherId,
+        virtualPath: path,
+        content,
+        mode,
+        sessionId: context.sessionId,
+      });
+      return `Updated ${updated.path}`;
+    },
+  },
+  {
+    name: "search_sessions",
+    description:
+      "Search prior sessions by keyword and optional filters (classId/dateFrom/dateTo).",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        classId: { type: "string" },
+        dateFrom: { type: "string" },
+        dateTo: { type: "string" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    handler: async (args, context) => {
+      const query = String(args.query || "").trim();
+      if (!query) {
+        throw new Error("query is required");
+      }
+      const rows = await searchSessions({
+        teacherId: context.teacherId,
+        query,
+        classId: typeof args.classId === "string" ? args.classId : undefined,
+        dateFrom: typeof args.dateFrom === "string" ? args.dateFrom : undefined,
+        dateTo: typeof args.dateTo === "string" ? args.dateTo : undefined,
+      });
+      return JSON.stringify(rows, null, 2);
+    },
+  },
+  {
+    name: "read_session",
+    description: "Read a past session by sessionId.",
+    parameters: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+      },
+      required: ["sessionId"],
+      additionalProperties: false,
+    },
+    handler: async (args, context) => {
+      const sessionId = String(args.sessionId || "").trim();
+      if (!sessionId) {
+        throw new Error("sessionId is required");
+      }
+      const session = await readSession(sessionId);
+      if (!session || session.teacherId !== context.teacherId) {
+        throw new Error("Session not found");
+      }
+      return JSON.stringify(
+        {
+          id: session.id,
+          classRef: session.classRef ?? null,
+          updatedAt: session.updatedAt,
+          messages: session.messages,
+        },
+        null,
+        2,
+      );
     },
   },
   {

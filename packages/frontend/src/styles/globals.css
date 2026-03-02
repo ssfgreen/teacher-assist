@@ -10,7 +10,8 @@
 
 body {
   font-family: "IBM Plex Sans", system-ui, sans-serif;
-  background: #f7f5f0;
+  background-color: transparent;
+  color: inherit;
 }
 
 .workspace-editor .milkdown {

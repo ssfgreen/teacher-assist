@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 
 import { throwApiError } from "../../common/api-error";
+import { searchSessions } from "../../memory";
 import { assertValidProvider } from "../../model";
 import {
   appendSessionMessages,
@@ -37,6 +38,22 @@ export class SessionsService {
 
   async list(teacherId: string) {
     return listSessions(teacherId);
+  }
+
+  async search(params: {
+    teacherId: string;
+    query: string;
+    classId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    return searchSessions({
+      teacherId: params.teacherId,
+      query: params.query,
+      classId: params.classId,
+      dateFrom: params.dateFrom,
+      dateTo: params.dateTo,
+    });
   }
 
   async read(sessionId: string, teacherId: string) {

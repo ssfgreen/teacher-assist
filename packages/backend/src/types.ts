@@ -59,6 +59,7 @@ export interface ChatTrace {
   usage: TokenUsage;
   status: "success" | "error_max_turns" | "error_max_budget";
   steps: ChatTraceStep[];
+  memorySelectionSummary?: string;
 }
 
 export interface ModelResponse {
@@ -80,10 +81,12 @@ export interface SessionRecord {
   teacherId: string;
   provider: Provider;
   model: string;
+  classRef?: string | null;
   messages: ChatMessage[];
   tasks: SessionTask[];
   traceHistory: ChatTrace[];
   contextHistory: string[][];
+  memoryContextHistory?: string[][];
   activeSkills: string[];
   createdAt: string;
   updatedAt: string;

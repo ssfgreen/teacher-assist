@@ -20,6 +20,8 @@ export function assembleSystemPrompt(params: {
   assistantIdentity: string;
   agentInstructions: string;
   workspaceContext: Array<{ path: string; content: string }>;
+  teacherMemory?: string | null;
+  classMemory?: string | null;
   skillManifest?: string;
   toolInstructions?: string;
 }): AssembledPrompt {
@@ -39,6 +41,14 @@ export function assembleSystemPrompt(params: {
     {
       tag: "workspace-context",
       content: workspaceContextBody || "No workspace context loaded.",
+    },
+    {
+      tag: "teacher-memory",
+      content: params.teacherMemory?.trim() || "No teacher memory loaded.",
+    },
+    {
+      tag: "class-memory",
+      content: params.classMemory?.trim() || "No class memory loaded.",
     },
     {
       tag: "skill-manifest",
@@ -68,6 +78,9 @@ Rules:
 - Reference relevant workspace context where possible.
 - If context is missing, ask concise clarification questions.
 - Keep claims grounded in the provided workspace files.
+- Final teacher-facing responses must be valid Markdown with clear structure.
+- Use headings, bullet lists, bold/italic emphasis, and markdown links where useful.
+- Preserve readable line breaks and paragraph spacing; do not return plain text blocks.
 - For pedagogy or lesson-design requests, call \`read_skill\` for relevant skills before finalizing the response.
 - Use tool calls to load additional workspace files only when needed.
 - For class-targeted requests, prefer reading \`classes/{classRef}/CLASS.md\` before making class-specific claims.

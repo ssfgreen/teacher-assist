@@ -20,10 +20,12 @@ export interface SessionRecord {
   teacherId: string;
   provider: Provider;
   model: string;
+  classRef?: string | null;
   messages: ChatMessage[];
   tasks?: Array<{ id: string; text: string; completed: boolean }>;
   traceHistory?: ChatTrace[];
   contextHistory?: string[][];
+  memoryContextHistory?: string[][];
   activeSkills?: string[];
   createdAt: string;
   updatedAt: string;
@@ -60,11 +62,21 @@ export interface WorkspaceFileResponse {
 
 export interface ChatApiResponse {
   response: ModelResponse;
+  status?: "success" | "awaiting_memory_capture";
+  proposals?: MemoryProposal[];
   sessionId: string;
   messages: ChatMessage[];
   skillsLoaded?: string[];
   workspaceContextLoaded?: string[];
+  memoryContextLoaded?: string[];
   trace?: ChatTrace;
+}
+
+export interface MemoryProposal {
+  id: string;
+  text: string;
+  scope: "teacher" | "class";
+  classId?: string;
 }
 
 export interface SkillManifestItem {

@@ -1,8 +1,10 @@
+import { FolderOpen, FolderX, Pencil, Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { WorkspaceNode } from "../../types";
 import WorkspaceTreeItem from "./WorkspaceTreeItem";
 import {
+  findNodeByPath,
   joinPath,
   parentDirectory,
   resolveRenameTargetPath,
@@ -25,6 +27,21 @@ interface WorkspaceSidebarProps {
   onRenameWorkspacePath: (fromPath: string, toPath: string) => Promise<void>;
   onCreateWorkspaceFile: (path: string, content?: string) => Promise<void>;
   onDeleteWorkspacePath: (path: string) => Promise<void>;
+  onExpandAllFolders: () => void;
+  onCollapseAllFolders: () => void;
+}
+
+function classMarkerForFolder(folderPath: string): {
+  path: string;
+  content: string;
+} {
+  const markerFile = folderPath.startsWith("classes/")
+    ? `${folderPath}/CLASS.md`
+    : `${folderPath}/README.md`;
+  const markerContent = markerFile.endsWith("/CLASS.md")
+    ? "# Class Profile\n\n- Class:\n- Stage:\n- Notes:\n"
+    : "# Folder Notes\n\n";
+  return { path: markerFile, content: markerContent };
 }
 
 export default function WorkspaceSidebar({
@@ -44,26 +61,17 @@ export default function WorkspaceSidebar({
   onRenameWorkspacePath,
   onCreateWorkspaceFile,
   onDeleteWorkspacePath,
+  onExpandAllFolders,
+  onCollapseAllFolders,
 }: WorkspaceSidebarProps) {
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [createMode, setCreateMode] = useState<"file" | "folder" | null>(null);
   const [createParentPath, setCreateParentPath] = useState<string | null>(null);
   const [createValue, setCreateValue] = useState("");
-  const [deleteArmedPath, setDeleteArmedPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const createInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!selectedWorkspaceNode) {
-      setDeleteArmedPath(null);
-      return;
-    }
-    if (deleteArmedPath !== selectedWorkspaceNode.path) {
-      setDeleteArmedPath(null);
-    }
-  }, [selectedWorkspaceNode, deleteArmedPath]);
 
   useEffect(() => {
     if (!createMode) {
@@ -73,20 +81,19 @@ export default function WorkspaceSidebar({
     createInputRef.current?.select();
   }, [createMode]);
 
-  const startRename = () => {
-    if (!selectedWorkspaceNode) {
+  const startRename = (path: string) => {
+    const node = findNodeByPath(workspaceTree, path);
+    if (!node) {
       return;
     }
-    const suggestedName = selectedWorkspaceNode.path
-      .split("/")
-      .filter(Boolean)
-      .slice(-1)[0];
-    setEditingPath(selectedWorkspaceNode.path);
-    setEditingValue(suggestedName ?? selectedWorkspaceNode.path);
+    const suggestedName = node.path.split("/").filter(Boolean).slice(-1)[0];
+    setEditingPath(path);
+    setEditingValue(suggestedName ?? node.path);
   };
 
   const commitRename = (path: string) => {
-    if (!selectedWorkspaceNode || path !== selectedWorkspaceNode.path) {
+    const node = findNodeByPath(workspaceTree, path);
+    if (!node) {
       setEditingPath(null);
       setEditingValue("");
       return;
@@ -99,14 +106,12 @@ export default function WorkspaceSidebar({
       return;
     }
 
-    const resolvedPath = resolveRenameTargetPath(
-      selectedWorkspaceNode,
-      nextName,
-    );
-    if (resolvedPath !== selectedWorkspaceNode.path) {
-      void onRenameWorkspacePath(selectedWorkspaceNode.path, resolvedPath);
+    const resolvedPath = resolveRenameTargetPath(node, nextName);
+    if (resolvedPath !== node.path) {
+      void onRenameWorkspacePath(node.path, resolvedPath);
       onSelectWorkspacePath(resolvedPath);
     }
+
     setEditingPath(null);
     setEditingValue("");
   };
@@ -127,129 +132,86 @@ export default function WorkspaceSidebar({
       const filePath = joinPath(createParentPath ?? "", normalized);
       await onCreateWorkspaceFile(filePath, "# New file\n");
       onSelectWorkspacePath(filePath);
-      setCreateMode(null);
-      setCreateParentPath(null);
-      setCreateValue("");
-      return;
+    } else {
+      const folderPath = joinPath(createParentPath ?? "", normalized);
+      const marker = classMarkerForFolder(folderPath);
+      await onCreateWorkspaceFile(marker.path, marker.content);
+      onSelectWorkspacePath(marker.path);
     }
 
-    const folderPath = joinPath(createParentPath ?? "", normalized);
-    const markerFile = folderPath.startsWith("classes/")
-      ? `${folderPath}/CLASS.md`
-      : `${folderPath}/README.md`;
-    const markerContent = markerFile.endsWith("/CLASS.md")
-      ? "# Class Profile\n\n- Class:\n- Stage:\n- Notes:\n"
-      : "# Folder Notes\n\n";
-    await onCreateWorkspaceFile(markerFile, markerContent);
-    onSelectWorkspacePath(markerFile);
     setCreateMode(null);
     setCreateParentPath(null);
     setCreateValue("");
   };
 
-  const handleDelete = async () => {
-    if (!selectedWorkspaceNode) {
-      return;
+  const beginCreate = (targetPath: string, mode: "file" | "folder") => {
+    const node = findNodeByPath(workspaceTree, targetPath);
+    const baseDir =
+      node?.type === "directory" ? node.path : parentDirectory(targetPath);
+
+    if (baseDir) {
+      const expanded = expandedFolders[baseDir] ?? true;
+      if (!expanded) {
+        onToggleFolder(baseDir);
+      }
     }
-    if (deleteArmedPath !== selectedWorkspaceNode.path) {
-      setDeleteArmedPath(selectedWorkspaceNode.path);
-      return;
-    }
-    await onDeleteWorkspacePath(selectedWorkspaceNode.path);
-    setDeleteArmedPath(null);
+
+    setCreateMode(mode);
+    setCreateValue(mode === "file" ? "untitled.md" : "untitled");
+    setCreateParentPath(baseDir);
   };
 
   return (
     <section>
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-display text-lg">Workspace</h2>
-        <div className="flex gap-1">
+      <div className="mb-1 flex items-center justify-between text-xs text-ink-700">
+        <span>{workspaceFilesCount} files</span>
+        <div className="flex items-center gap-2">
           <button
-            className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
+            className="rounded p-1 transition hover:text-accent-600"
             type="button"
-            onClick={() => setSettingsOpen((value) => !value)}
+            onClick={onExpandAllFolders}
+            aria-label="Open all folders"
+            title="Open all folders"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </button>
+          <button
+            className="rounded p-1 transition hover:text-accent-600"
+            type="button"
+            onClick={onCollapseAllFolders}
+            aria-label="Close all folders"
+            title="Close all folders"
+          >
+            <FolderX className="h-4 w-4" />
+          </button>
+          <button
+            className="rounded px-1 py-0.5 text-lg leading-none transition hover:text-accent-600"
+            type="button"
+            onClick={() => setSettingsOpen((current) => !current)}
             aria-label="Workspace settings"
             title="Workspace settings"
           >
-            ⚙
+            <Settings className="h-4 w-4" />
           </button>
-          <button
-            className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
-            type="button"
-            onClick={startRename}
-            disabled={!selectedWorkspaceNode}
-            aria-label="Rename selected"
-            title="Rename selected"
-          >
-            ✎
-          </button>
-          <button
-            className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
-            type="button"
-            onClick={() => {
-              const baseDir =
-                selectedWorkspaceNode?.type === "directory"
-                  ? selectedWorkspaceNode.path
-                  : selectedWorkspaceNode
-                    ? parentDirectory(selectedWorkspaceNode.path)
-                    : "";
-              if (baseDir && selectedWorkspaceNode?.type === "directory") {
-                const expanded = expandedFolders[baseDir] ?? true;
-                if (!expanded) {
-                  onToggleFolder(baseDir);
-                }
-              }
-              setCreateMode("folder");
-              setCreateValue("untitled");
-              setCreateParentPath(baseDir);
-            }}
-            aria-label="Create folder"
-            title="Create folder"
-          >
-            ⊞
-          </button>
-          <button
-            className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
-            type="button"
-            onClick={() => {
-              const baseDir =
-                selectedWorkspaceNode?.type === "directory"
-                  ? selectedWorkspaceNode.path
-                  : selectedWorkspaceNode
-                    ? parentDirectory(selectedWorkspaceNode.path)
-                    : "";
-              if (baseDir && selectedWorkspaceNode?.type === "directory") {
-                const expanded = expandedFolders[baseDir] ?? true;
-                if (!expanded) {
-                  onToggleFolder(baseDir);
-                }
-              }
-              setCreateMode("file");
-              setCreateValue("untitled.md");
-              setCreateParentPath(baseDir);
-            }}
-            aria-label="Create file"
-            title="Create file"
-          >
-            ＋
-          </button>
-          <button
-            className={`rounded-lg border px-2 py-1 text-xs ${deleteArmedPath === selectedWorkspaceNode?.path ? "border-red-500 text-red-700" : "border-paper-100"}`}
-            type="button"
-            onClick={() => void handleDelete()}
-            disabled={!selectedWorkspaceNode}
-            aria-label="Delete selected"
-            title="Delete selected"
-          >
-            ⌫
-          </button>
+          {selectedWorkspaceNode ? (
+            <button
+              className="rounded px-1 py-0.5 text-base leading-none transition hover:text-accent-600"
+              type="button"
+              onClick={() => startRename(selectedWorkspaceNode.path)}
+              aria-label="Rename selected"
+              title="Rename selected"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       </div>
+
       {settingsOpen ? (
-        <div className="mb-2 rounded-lg border border-paper-100 bg-white p-2 text-xs">
+        <div className="mb-2 rounded-lg border border-paper-300 bg-surface-muted p-2 text-xs">
           <div className="flex items-center justify-between gap-2">
             <button
-              className="rounded border border-paper-100 px-2 py-1 text-xs"
+              className="rounded border border-paper-300 bg-surface-panel px-2 py-1 text-xs"
               type="button"
               onClick={() => {
                 setShowResetConfirm(true);
@@ -259,7 +221,7 @@ export default function WorkspaceSidebar({
               Reset workspace
             </button>
             <button
-              className="rounded border border-paper-100 px-2 py-1 text-xs"
+              className="rounded border border-paper-300 bg-surface-panel px-2 py-1 text-xs"
               type="button"
               onClick={() => {
                 void onUndoWorkspaceReset();
@@ -272,14 +234,17 @@ export default function WorkspaceSidebar({
           </div>
         </div>
       ) : null}
-      <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-paper-100 p-2">
+
+      <div className="space-y-1">
         {createMode && (createParentPath ?? "") === "" ? (
           <input
             ref={createInputRef}
-            className="mb-1 w-full rounded border border-accent-600 bg-white px-1 py-0.5 text-xs"
+            className="mb-1 w-full rounded border border-accent-500 bg-surface-input px-1 py-0.5 text-xs"
             value={createValue}
             onChange={(event) => setCreateValue(event.target.value)}
-            onBlur={() => void commitCreate()}
+            onBlur={() => {
+              void commitCreate();
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 void commitCreate();
@@ -292,11 +257,12 @@ export default function WorkspaceSidebar({
             }}
             aria-label={
               createMode === "file"
-                ? "New file name input"
-                : "New folder name input"
+                ? "New file name input for root"
+                : "New folder name input for root"
             }
           />
         ) : null}
+
         {workspaceTree.map((node) => (
           <WorkspaceTreeItem
             key={node.path}
@@ -320,49 +286,53 @@ export default function WorkspaceSidebar({
             createMode={createMode}
             createValue={createValue}
             onCreateValueChange={setCreateValue}
-            onCreateCommit={() => void commitCreate()}
+            onCreateCommit={() => {
+              void commitCreate();
+            }}
             onCreateCancel={() => {
               setCreateMode(null);
               setCreateParentPath(null);
               setCreateValue("");
             }}
+            onStartRename={startRename}
+            onStartCreate={beginCreate}
+            onArchivePath={(path) => {
+              if (window.confirm(`Archive ${path}?`)) {
+                void onDeleteWorkspacePath(path);
+              }
+            }}
           />
         ))}
       </div>
-      <p className="mt-1 text-xs text-ink-800">{workspaceFilesCount} files</p>
-      {deleteArmedPath ? (
-        <p className="mt-1 text-xs text-red-700">
-          Press delete again to confirm.
-        </p>
-      ) : null}
 
       {workspaceError ? (
-        <p className="mt-2 text-xs text-red-700">{workspaceError}</p>
+        <p className="mt-2 text-sm text-danger-700">{workspaceError}</p>
       ) : null}
+
       {showResetConfirm ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-paper-100 bg-white p-4 shadow-lg">
-            <p className="text-sm font-medium">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-overlay p-4">
+          <div className="w-full max-w-md rounded-2xl border border-paper-200 bg-surface-panel p-4 shadow-xl">
+            <h3 className="font-display text-lg">Reset workspace</h3>
+            <p className="mt-2 text-sm text-ink-700">
               Are you sure you want to do this?
             </p>
-            <p className="mt-2 text-xs text-ink-800">
-              Reset workspace will restore default files and remove current
-              custom files. You can undo once immediately after reset.
+            <p className="mt-1 text-xs text-ink-700">
+              This restores the default scaffold and can remove custom files.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded border border-paper-100 px-2 py-1 text-xs"
+                className="rounded-lg border border-paper-300 px-3 py-1 text-sm"
                 type="button"
                 onClick={() => setShowResetConfirm(false)}
               >
                 Cancel
               </button>
               <button
-                className="rounded border border-red-500 px-2 py-1 text-xs text-red-700"
+                className="rounded-lg bg-danger-500 px-3 py-1 text-sm text-surface-panel"
                 type="button"
                 onClick={() => {
-                  setShowResetConfirm(false);
                   void onResetWorkspace();
+                  setShowResetConfirm(false);
                 }}
               >
                 Reset

@@ -64,7 +64,7 @@ export default function WorkspaceEditor({
 
   return (
     <div
-      className="workspace-editor min-h-0 flex-1 overflow-hidden rounded-lg border border-paper-100 bg-white"
+      className="workspace-editor min-h-0 flex-1 overflow-hidden rounded-lg border border-paper-100 bg-surface-panel"
       aria-label="Workspace file editor"
     >
       <div className="h-full" ref={rootRef} />

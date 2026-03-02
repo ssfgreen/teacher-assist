@@ -1,9 +1,11 @@
 import * as authApi from "../api/auth";
 import * as chatApi from "../api/chat";
+import * as memoryApi from "../api/memory";
 import * as sessionsApi from "../api/sessions";
 import * as skillsApi from "../api/skills";
 import * as workspaceApi from "../api/workspace";
 import { useAuthStore } from "../stores/authStore";
+import { useMemoryStore } from "../stores/memoryStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import type { SessionRecord, TeacherProfile } from "../types";
@@ -44,6 +46,18 @@ export function resetStores(): void {
       curriculum: true,
     },
     canUndoReset: false,
+  });
+
+  useMemoryStore.setState({
+    tree: [],
+    openFilePath: null,
+    openFileContent: "",
+    dirty: false,
+    loading: false,
+    saving: false,
+    error: null,
+    proposals: [],
+    decisions: {},
   });
 
   localStorage.clear();
@@ -150,11 +164,48 @@ export function setupDefaultMocks(): void {
     tier: 2,
     content: "# Backward Design\n\nSkill file content.",
   });
+  vi.mocked(memoryApi.listMemory).mockResolvedValue({
+    tree: [
+      {
+        name: "MEMORY.md",
+        path: "MEMORY.md",
+        type: "file",
+      },
+      {
+        name: "classes",
+        path: "classes",
+        type: "directory",
+        children: [
+          {
+            name: "3B",
+            path: "classes/3B",
+            type: "directory",
+            children: [
+              {
+                name: "MEMORY.md",
+                path: "classes/3B/MEMORY.md",
+                type: "file",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  vi.mocked(memoryApi.readMemoryFile).mockResolvedValue({
+    path: "MEMORY.md",
+    content: "# Teacher Memory",
+  });
+  vi.mocked(memoryApi.writeMemoryFile).mockResolvedValue({
+    ok: true,
+    path: "MEMORY.md",
+  });
+  vi.mocked(memoryApi.deleteMemoryFile).mockResolvedValue();
 
   vi.mocked(chatApi.sendChatStream).mockImplementation(
-    async (_params, onDelta) => {
-      onDelta("Hello ");
-      onDelta("world");
+    async (_params, callbacks) => {
+      callbacks.onDelta("Hello ");
+      callbacks.onDelta("world");
       return {
         sessionId: "s1",
         messages: [
@@ -162,6 +213,7 @@ export function setupDefaultMocks(): void {
           { role: "assistant", content: "Hello world" },
         ],
         skillsLoaded: [],
+        status: "success",
         trace: {
           id: "trace-1",
           createdAt: "2026-02-28T00:00:00.000Z",
@@ -177,6 +229,7 @@ export function setupDefaultMocks(): void {
           steps: [],
         },
         workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
+        memoryContextLoaded: ["MEMORY.md"],
         response: {
           content: "Hello world",
           toolCalls: [],

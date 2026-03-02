@@ -5,13 +5,16 @@ import App from "./App";
 import * as authApi from "./api/auth";
 import * as chatApi from "./api/chat";
 import * as skillsApi from "./api/skills";
+import * as workspaceApi from "./api/workspace";
 import { setupDefaultMocks, teacher } from "./test/app-fixtures";
+import type { ChatApiResponse } from "./types";
 
 vi.mock("./api/auth");
 vi.mock("./api/chat");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
 vi.mock("./api/skills");
+vi.mock("./api/memory");
 
 beforeEach(() => {
   setupDefaultMocks();
@@ -46,9 +49,11 @@ describe("App auth and chat", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
 
-    const selects = screen.getAllByRole("combobox");
-    await user.selectOptions(selects[0], "anthropic");
-    await user.selectOptions(selects[1], "claude-sonnet-4-6");
+    await user.selectOptions(screen.getByLabelText("Provider"), "anthropic");
+    await user.selectOptions(
+      screen.getByLabelText("Model"),
+      "claude-sonnet-4-6",
+    );
 
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Use anthropic{enter}");
@@ -113,9 +118,9 @@ describe("App auth and chat", () => {
 
   it("renders tool call blocks and marks loaded skill as active", async () => {
     vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
-      async (_params, onDelta) => {
-        onDelta("Draft ");
-        onDelta("ready");
+      async (_params, callbacks) => {
+        callbacks.onDelta("Draft ");
+        callbacks.onDelta("ready");
         return {
           sessionId: "s1",
           skillsLoaded: ["backward-design"],
@@ -177,16 +182,12 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Plan lesson{enter}");
 
-    await screen.findByText("Skill read");
-    await user.click(screen.getByText("read_skill backward-design"));
-    await screen.findByText("Arguments");
-    await screen.findByText("Result");
+    await screen.findByText(/read skill: backward-design/i);
 
-    await user.click(screen.getByRole("button", { name: "Skills" }));
     await screen.findByText("Active");
   });
 
-  it("loads full skill file from the skills tab", async () => {
+  it("loads full skill file from the skills section", async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -194,13 +195,239 @@ describe("App auth and chat", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
 
-    await user.click(screen.getByRole("button", { name: "Skills" }));
-    await user.click(screen.getByRole("button", { name: "backward-design" }));
+    await user.click(screen.getByText("backward-design"));
 
     await waitFor(() => {
       expect(skillsApi.readSkill).toHaveBeenCalledWith("backward-design");
     });
     await screen.findByText(/Backward Design/i);
+  });
+
+  it("collapses and expands sidebar sections from their headers", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+    await screen.findByRole("button", { name: /^soul\.md$/i });
+
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+    expect(screen.queryByRole("button", { name: /^soul\.md$/i })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+    await screen.findByRole("button", { name: /^soul\.md$/i });
+  });
+
+  it("groups consecutive skill reads under reading skills", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("Done");
+        return {
+          sessionId: "s-grouped-skills",
+          skillsLoaded: ["backward-design", "differentiation"],
+          messages: [
+            { role: "user", content: "Plan with skills" },
+            {
+              role: "tool",
+              content: "ok",
+              toolName: "read_skill",
+              toolInput: { target: "backward-design" },
+            },
+            {
+              role: "tool",
+              content: "ok",
+              toolName: "read_skill",
+              toolInput: { target: "differentiation" },
+            },
+            { role: "assistant", content: "Done" },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-grouped-skills",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Done",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan with skills{enter}");
+
+    const grouped = await screen.findByText(/reading skills/i);
+    await user.click(grouped);
+    await screen.findByText(/read skill: backward-design/i);
+    await screen.findByText(/read skill: differentiation/i);
+  });
+
+  it("opens right inspector when clicking a grouped skill item", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("Done");
+        return {
+          sessionId: "s-inspector-skill",
+          skillsLoaded: ["backward-design", "differentiation"],
+          messages: [
+            { role: "user", content: "Plan with grouped skills" },
+            {
+              role: "tool",
+              content: "ok",
+              toolName: "read_skill",
+              toolInput: { target: "backward-design" },
+            },
+            {
+              role: "tool",
+              content: "ok",
+              toolName: "read_skill",
+              toolInput: { target: "differentiation" },
+            },
+            { role: "assistant", content: "Done" },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-inspector-skill",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Done",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan with grouped skills{enter}");
+
+    const grouped = await screen.findByText(/reading skills/i);
+    await user.click(grouped);
+    await user.click(await screen.findByText(/read skill: backward-design/i));
+    await screen.findByText("Skill file content.");
+  });
+
+  it("opens right inspector when clicking a grouped read file item", async () => {
+    vi.mocked(workspaceApi.readWorkspaceFile).mockResolvedValueOnce({
+      path: "teacher.md",
+      content: "# Teacher Profile\n\nDetails",
+    });
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("Done");
+        return {
+          sessionId: "s-inspector-read-file",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Inspect files" },
+            {
+              role: "tool",
+              content: "# teacher file",
+              toolName: "read_file",
+              toolInput: { path: "teacher.md" },
+            },
+            {
+              role: "tool",
+              content: "# pedagogy file",
+              toolName: "read_file",
+              toolInput: { path: "pedagogy.md" },
+            },
+            { role: "assistant", content: "Done" },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-inspector-read-file",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Done",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Inspect files{enter}");
+
+    const grouped = await screen.findByText(/exploring files/i);
+    await user.click(grouped);
+    await user.click(await screen.findByText(/read file: teacher\.md/i));
+    await screen.findByRole("heading", { name: "Teacher Profile" });
   });
 
   it("shows generated prompt and trace steps", async () => {
@@ -214,23 +441,211 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Plan loops{enter}");
 
-    await screen.findByText("Final model response");
-    await user.click(screen.getByText("Final model response"));
-    await screen.findByText("Call Details");
-    const promptTokenRows = await screen.findAllByText(/Prompt tokens/i);
-    expect(promptTokenRows.length).toBeGreaterThan(0);
+    await screen.findByText("Assistant response");
+    await user.click(screen.getByText("Assistant response"));
+    const tokenBadges = await screen.findAllByLabelText(
+      /Prompt: 1, Response: 2, Total: 3/i,
+    );
+    expect(tokenBadges.length).toBeGreaterThan(0);
+  });
+
+  it("opens full prompt text in the right inspector", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("Ready.");
+        return {
+          sessionId: "s-full-prompt",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Show prompt" },
+            { role: "assistant", content: "Ready." },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-full-prompt",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt:
+              "<assistant-identity>Identity</assistant-identity>\n<workspace-context>teacher.md</workspace-context>",
+            estimatedPromptTokens: 11,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Ready.",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Show prompt{enter}");
+
+    await user.click(
+      await screen.findByRole("button", { name: /view full prompt/i }),
+    );
+    await screen.findByText(
+      /<assistant-identity>Identity<\/assistant-identity>/i,
+    );
+    await screen.findByText(
+      /<workspace-context>teacher\.md<\/workspace-context>/i,
+    );
+  });
+
+  it("opens raw model response text in the right inspector", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("## Plan\nLine one\nLine two");
+        return {
+          sessionId: "s-raw-response",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Show raw response" },
+            {
+              role: "assistant",
+              content: "## Plan\nLine one\nLine two",
+            },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-raw-response",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 11,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "## Plan\nLine one\nLine two",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Show raw response{enter}");
+
+    await user.click(
+      await screen.findByRole("button", { name: /view raw response/i }),
+    );
+
+    await screen.findByText(/## Plan/i, { selector: "pre" });
+    await screen.findByText(/Line one/i, { selector: "pre" });
+    await screen.findByText(/Line two/i, { selector: "pre" });
+  });
+
+  it("inspects virtual workspace context files without workspace read errors", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("Ready.");
+        return {
+          sessionId: "s-virtual-context",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Use context" },
+            { role: "assistant", content: "Ready." },
+          ],
+          workspaceContextLoaded: ["classes/catalog.md"],
+          trace: {
+            id: "trace-virtual-context",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 11,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Ready.",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Use context{enter}");
+
+    const contextSummary = await screen.findByText(
+      /prompt embellished: context added/i,
+    );
+    await user.click(contextSummary);
+    await user.click(await screen.findByText(/classes\/catalog\.md/i));
+
+    await screen.findByText(/Available class references: 3B/i);
+    expect(
+      screen.queryByText(/workspace file not found/i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows thinking state while waiting for the final model response", async () => {
-    let resolveStream:
-      | ((value: Awaited<ReturnType<typeof chatApi.sendChatStream>>) => void)
-      | null = null;
+    let releaseStream!: (value: ChatApiResponse) => void;
+    const pendingStream = new Promise<ChatApiResponse>((resolve) => {
+      releaseStream = resolve;
+    });
 
     vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveStream = resolve;
-        }),
+      () => pendingStream,
     );
 
     const user = userEvent.setup();
@@ -243,12 +658,11 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Plan loops{enter}");
 
-    await screen.findByText("Thinking");
     const thinkingRows = await screen.findAllByText("Thinking...");
     expect(thinkingRows.length).toBeGreaterThan(0);
-    expect(screen.queryByText("Final model response")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assistant response")).not.toBeInTheDocument();
 
-    resolveStream?.({
+    releaseStream({
       sessionId: "s-thinking",
       skillsLoaded: [],
       messages: [
@@ -283,7 +697,7 @@ describe("App auth and chat", () => {
       },
     });
 
-    await screen.findByText("Final model response");
+    await screen.findByText("Assistant response");
   });
 
   it("shows full final model response without truncating the summary", async () => {
@@ -296,8 +710,8 @@ describe("App auth and chat", () => {
     ].join(" ");
 
     vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
-      async (_params, onDelta) => {
-        onDelta("Drafting...");
+      async (_params, callbacks) => {
+        callbacks.onDelta("Drafting...");
         return {
           sessionId: "s-full-response",
           skillsLoaded: [],
@@ -345,16 +759,16 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Give me full output{enter}");
 
-    await screen.findByText("Final model response");
+    await screen.findByText("Assistant response");
     const visibleTail = await screen.findAllByText(/must remain visible/i);
     expect(visibleTail.length).toBeGreaterThan(0);
   });
 
   it("renders assistant lesson sections as distinct blocks", async () => {
     vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
-      async (_params, onDelta) => {
-        onDelta("Lesson ");
-        onDelta("ready");
+      async (_params, callbacks) => {
+        callbacks.onDelta("Lesson ");
+        callbacks.onDelta("ready");
         return {
           sessionId: "s-sections",
           skillsLoaded: [],
@@ -414,8 +828,133 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Create sectioned lesson{enter}");
 
-    await screen.findByText("Starter");
-    const sectionCards = await screen.findAllByTestId("assistant-section");
-    expect(sectionCards.length).toBe(3);
+    await screen.findByRole("heading", { name: "Starter" });
+    await screen.findByRole("heading", { name: "Main Activity" });
+    await screen.findByRole("heading", { name: "Plenary" });
+  });
+
+  it("renders assistant markdown with single-line breaks", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta(
+          "## Plan\nLine one\nLine two\n\n**Bold** and *italic*.",
+        );
+        return {
+          sessionId: "s-markdown-breaks",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Format this" },
+            {
+              role: "assistant",
+              content: "## Plan\nLine one\nLine two\n\n**Bold** and *italic*.",
+            },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-markdown-breaks",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "ok",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Format this{enter}");
+
+    await screen.findByRole("heading", { name: "Plan" });
+    await screen.findByText(/bold/i);
+    const lineBreaks = container.querySelectorAll("br");
+    expect(lineBreaks.length).toBeGreaterThan(0);
+  });
+
+  it("renders markdown bullet lists in assistant responses", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta(
+          "Two core MCQs (S1 trig focus)\n- MCQ 1\n  Question: What is sin A?\n  A) 3/6\n  Answer: A\n- MCQ 2\n  Question: What is tan B?\n  Answer: C",
+        );
+        return {
+          sessionId: "s-markdown-lists",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Format bullets" },
+            {
+              role: "assistant",
+              content:
+                "Two core MCQs (S1 trig focus)\n- MCQ 1\n  Question: What is sin A?\n  A) 3/6\n  Answer: A\n- MCQ 2\n  Question: What is tan B?\n  Answer: C",
+            },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-markdown-lists",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "ok",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Format bullets{enter}");
+
+    const listItems = await screen.findAllByRole("listitem");
+    expect(listItems.length).toBeGreaterThanOrEqual(2);
+    await screen.findByText(/MCQ 1/i);
+    await screen.findByText(/MCQ 2/i);
   });
 });

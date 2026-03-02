@@ -4,8 +4,8 @@
 
 `teacher-assist` is a monorepo with a NestJS backend (running on Bun) and a Vite/React frontend.
 
-- `packages/backend`: Auth, chat, sessions, workspace APIs, prompt assembly, provider adapters, streaming API.
-- `packages/frontend`: Login/chat UI, session sidebar, workspace editor, model selection, streamed response rendering.
+- `packages/backend`: Auth, chat, sessions, workspace/memory APIs, prompt assembly, provider adapters, streaming API.
+- `packages/frontend`: Login/chat UI, session/sidebar panels, workspace + memory editor, model selection, streamed response rendering.
 
 The current implementation is Sprint 0 + Sprint 1 + Sprint 2 + Sprint 3 (skills + agentic tool loop + transparent tool/skill UI).
 
@@ -18,6 +18,7 @@ Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit en
 - `ChatController` / `ChatService`
 - `SessionsController` / `SessionsService`
 - `SkillsController` / `SkillsService`
+- `MemoryController` / `MemoryService`
 - `WorkspaceController` / `WorkspaceService`
 
 ### Auth
@@ -33,10 +34,11 @@ Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit en
 
 `POST /api/chat` supports two modes, injects workspace-derived system context, and now runs through an agent loop:
 
-- Non-stream mode: returns JSON `{ response, sessionId, messages, skillsLoaded, workspaceContextLoaded }`.
+- Non-stream mode: returns JSON `{ response, status, proposals?, sessionId, messages, skillsLoaded, workspaceContextLoaded, memoryContextLoaded }`.
 - Stream mode (`stream: true`): returns SSE with events:
   - `start`
   - `delta`
+  - `message` (tool-step messages as they are emitted by the loop)
   - `ping`
   - `done` (includes full response payload above)
   - `error`
@@ -47,8 +49,10 @@ System prompt assembly order:
 1. `<assistant-identity>` from workspace `soul.md` (with default fallback)
 2. `<agent-instructions>` static planner instructions
 3. `<workspace-context>` from teacher/pedagogy plus class/curriculum catalogs (progressive loading; full files fetched later via tools)
-4. `<skill-manifest>` from discovered skills folder
-5. `<tool-instructions>` generated from tool registry
+4. `<teacher-memory>` (first 200 lines of `MEMORY.md` when present)
+5. `<class-memory>` (first 200 lines of `classes/{classRef}/MEMORY.md` when present)
+6. `<skill-manifest>` from discovered skills folder
+7. `<tool-instructions>` generated from tool registry
 
 Agent loop behavior:
 
@@ -86,6 +90,7 @@ Real model calls require provider API keys; missing keys return explicit config 
 - Session records also persist runtime metadata used by the UI across logins:
   - `traceHistory`
   - `contextHistory`
+  - `memoryContextHistory`
   - `activeSkills`
 
 Persistence strategy:
@@ -112,6 +117,20 @@ Persistence strategy:
   - `DELETE /api/workspace/*path` (`soul.md` protected)
   - `POST /api/workspace/seed`
 
+### Memory
+
+- Memory files are persisted in PostgreSQL (`memory_files`) with teacher isolation and optional class scope.
+- Memory event audit log is persisted in `memory_events`.
+- Virtual path examples:
+  - `MEMORY.md`
+  - `classes/3B/MEMORY.md`
+- Endpoints:
+  - `GET /api/memory`
+  - `GET /api/memory/*path`
+  - `PUT /api/memory/*path`
+  - `DELETE /api/memory/*path`
+  - `POST /api/chat/memory-response` (confirm/dismiss memory proposals)
+
 ### Skills
 
 - Skills are discovered from repo-root `skills/{skillName}` with cwd-aware fallback for backend test/runtime entrypoints.
@@ -121,13 +140,12 @@ Persistence strategy:
   - Tier 3: `skill-name/file.md` -> referenced file content
 - Skill references can be expanded recursively with depth and circular-reference guards.
 - Endpoint:
-  - `GET /api/skills` (authenticated) returns manifest for frontend `Skills` tab.
+  - `GET /api/skills` (authenticated) returns manifest for the frontend sidebar `Skills` section.
 
-### Planned Memory Runtime Enhancements
+### Session Search
 
-- Introduce short-term vs long-term memory handling with end-of-session consolidation.
-- Rank retrieved memory snippets by relevance, importance, recency, and access frequency before prompt injection.
-- Persist memory selection and consolidation decisions into traces for observability.
+- Session text search uses `sessions.search_vector` (`tsvector`) with GIN index.
+- Search API is exposed via `GET /api/sessions/search/query` and tool `search_sessions`.
 
 ### Stability Notes
 
@@ -152,19 +170,25 @@ Single-page React app with Zustand state stores.
 
 - Login/logout with auth bootstrap (`/api/auth/me`).
 - Session list, create, resume, delete.
-- Sidebar has stacked workspace/session sections. Clicking a workspace markdown file opens the workspace markdown editor in the main (two-thirds) pane, with autosave + manual save.
+- Full-height, resizable sidebar (default ~20%, draggable) with unified collapsible sections for workspace, sessions, skills, and memory.
+- Sidebar includes global workspace tree controls (`Open all folders` / `Close all folders`) and logout anchored at the bottom-left.
+- Clicking a workspace markdown file opens the workspace markdown editor in the main pane, with autosave + manual save.
 - Workspace sidebar includes destructive reset flow behind a confirmation modal, with one-step undo immediately after reset.
 - Chat send with streaming UX:
   - Creates in-progress assistant bubble.
   - Appends streamed deltas live.
+  - Appends streamed tool-step messages in-order.
   - Finalizes on `done` event.
   - Renders sectioned assistant outputs (`## Starter`, `## Main Activity`, `## Plenary`) as distinct section cards.
+  - Composer action button is inline (bottom-right): send by default, stop during active generation.
+  - Composer auto-resizes from one line up to a capped max height.
 - Chat hotkeys:
   - `Enter` sends.
   - `Shift+Enter` newline.
-- Provider/model selector with localStorage persistence.
-- Optional class selector (`classRef`) sourced from workspace class files.
+- Provider/model/class selectors are rendered below the composer (not in a global header) with localStorage-backed provider/model persistence.
 - Context indicator showing which workspace files were used for the latest response.
+- Context indicator separates workspace context from memory context.
+- Memory-capture card allows confirm/edit/dismiss decisions and bulk actions after each loop.
 
 ### API Layer
 
@@ -172,6 +196,7 @@ Single-page React app with Zustand state stores.
 - `api/sessions.ts`
 - `api/chat.ts` (includes SSE parser for stream mode)
 - `api/workspace.ts`
+- `api/memory.ts`
 
 ## Testing Strategy
 
@@ -192,7 +217,7 @@ Single-page React app with Zustand state stores.
   - context indicator rendering,
   - tool-call timeline rendering,
   - section-card rendering for structured assistant lesson outputs,
-  - active-skill highlighting in the `Skills` tab.
+  - active-skill highlighting in the sidebar `Skills` section and skill markdown rendering in the main pane.
 
 ## Key Engineering Decisions
 

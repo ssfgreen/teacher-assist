@@ -1,21 +1,174 @@
+import {
+  ChevronDown,
+  ChevronRight,
+  Ellipsis,
+  MessageSquarePlus,
+  PanelRightClose,
+  Sparkles,
+} from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 
+import { readMemoryFile as readMemoryFileApi } from "./api/memory";
 import { listSkills, readSkill } from "./api/skills";
+import { readWorkspaceFile as readWorkspaceFileApi } from "./api/workspace";
 import Shell from "./components/layout/Shell";
+import MarkdownRenderer from "./components/markdown/MarkdownRenderer";
 import LoginPanel from "./features/auth/LoginPanel";
 import ChatPane from "./features/chat/ChatPane";
 import { MODEL_OPTIONS } from "./features/chat/model-options";
 import { useChatSession } from "./features/chat/useChatSession";
+import MemoryCaptureCard from "./features/memory/MemoryCaptureCard";
+import MemoryTree from "./features/memory/MemoryTree";
 import WorkspaceSidebar from "./features/workspace/WorkspaceSidebar";
 import { collectFiles, findNodeByPath } from "./features/workspace/path-utils";
 import { useAuthStore } from "./stores/authStore";
+import { useMemoryStore } from "./stores/memoryStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWorkspaceStore } from "./stores/workspaceStore";
-import type { Provider, SkillManifestItem } from "./types";
+import type { SessionRecord, SkillManifestItem, WorkspaceNode } from "./types";
 
 const WorkspaceEditor = lazy(
   () => import("./components/workspace/WorkspaceEditor"),
 );
+
+type SidebarSection = "workspace" | "sessions" | "skills" | "memory";
+type InspectorSource = "skill" | "workspace" | "memory" | "prompt" | "response";
+type InspectorRenderMode = "markdown" | "pre";
+
+interface InspectorState {
+  source: InspectorSource;
+  title: string;
+  content: string;
+  loading: boolean;
+  error: string | null;
+  renderMode: InspectorRenderMode;
+}
+
+function formatRelativeTime(isoString: string): string {
+  const now = Date.now();
+  const then = new Date(isoString).getTime();
+  const deltaMs = Math.max(0, now - then);
+
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (deltaMs < minute) {
+    return "just now";
+  }
+  if (deltaMs < hour) {
+    const minutes = Math.floor(deltaMs / minute);
+    return `${minutes}m ago`;
+  }
+  if (deltaMs < day) {
+    const hours = Math.floor(deltaMs / hour);
+    return `${hours}h ago`;
+  }
+
+  const days = Math.floor(deltaMs / day);
+  return `${days}d ago`;
+}
+
+function sessionTitle(
+  session: SessionRecord,
+  manualTitles: Record<string, string>,
+): string {
+  if (manualTitles[session.id]) {
+    return manualTitles[session.id];
+  }
+
+  const firstUserMessage = session.messages.find(
+    (message) => message.role === "user",
+  );
+  if (!firstUserMessage?.content) {
+    return "New session";
+  }
+
+  return firstUserMessage.content.slice(0, 56);
+}
+
+function collectFolderPaths(tree: WorkspaceNode[]): string[] {
+  const result: string[] = [];
+  const walk = (nodes: WorkspaceNode[]) => {
+    for (const node of nodes) {
+      if (node.type === "directory") {
+        result.push(node.path);
+        walk(node.children ?? []);
+      }
+    }
+  };
+  walk(tree);
+  return result;
+}
+
+function virtualWorkspaceContextContent(params: {
+  path: string;
+  selectedClassRef: string;
+  classRefs: string[];
+  workspaceTree: WorkspaceNode[];
+}): string | null {
+  const { path, selectedClassRef, classRefs, workspaceTree } = params;
+  if (path === "classes/index.md") {
+    const classRef = selectedClassRef.trim().toUpperCase();
+    if (!classRef) {
+      return "Selected class reference: none\nClass profile path: classes/{CLASS}/CLASS.md\nUse read_file to load this profile only if needed.";
+    }
+    return `Selected class reference: ${classRef}\nClass profile path: classes/${classRef}/CLASS.md\nUse read_file to load this profile only if needed.`;
+  }
+
+  if (path === "classes/catalog.md") {
+    const available = [...classRefs]
+      .map((value) => value.toUpperCase())
+      .sort((a, b) => a.localeCompare(b));
+    return available.length > 0
+      ? `Available class references: ${available.join(", ")}`
+      : "Available class references: none";
+  }
+
+  if (path === "curriculum/catalog.md") {
+    const curriculumFiles = collectFiles(workspaceTree)
+      .filter((filePath) => filePath.startsWith("curriculum/"))
+      .filter((filePath) => filePath.toLowerCase().endsWith(".md"))
+      .filter((filePath) => filePath.toLowerCase() !== "curriculum/readme.md");
+
+    return curriculumFiles.length > 0
+      ? [
+          "Available curriculum files:",
+          ...curriculumFiles.map((filePath) => `- ${filePath}`),
+          "Use read_file to load only relevant curriculum files.",
+        ].join("\n")
+      : "Available curriculum files: none";
+  }
+
+  return null;
+}
+
+function SectionHeader({
+  title,
+  expanded,
+  onToggle,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      className="mb-1 flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-ink-700"
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-label={title}
+    >
+      <span>{title}</span>
+      {expanded ? (
+        <ChevronDown className="h-3.5 w-3.5" />
+      ) : (
+        <ChevronRight className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
 
 export default function App() {
   const teacher = useAuthStore((state) => state.teacher);
@@ -70,21 +223,57 @@ export default function App() {
   const closeWorkspaceFile = useWorkspaceStore((state) => state.closeFile);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<
-    "sessions" | "workspace" | "skills"
-  >("sessions");
+  const [sidebarSections, setSidebarSections] = useState<
+    Record<SidebarSection, boolean>
+  >({
+    workspace: true,
+    sessions: true,
+    skills: true,
+    memory: true,
+  });
   const [selectedClassRef, setSelectedClassRef] = useState("");
   const [skills, setSkills] = useState<SkillManifestItem[]>([]);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(
     null,
   );
-  const [selectedSkillContent, setSelectedSkillContent] = useState("");
-  const [skillLoading, setSkillLoading] = useState(false);
+  const [skillLoadingName, setSkillLoadingName] = useState<string | null>(null);
+  const [skillContentByName, setSkillContentByName] = useState<
+    Record<string, string>
+  >({});
+  const [skillErrorByName, setSkillErrorByName] = useState<
+    Record<string, string>
+  >({});
   const [focusComposerToken, setFocusComposerToken] = useState(0);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<
     string | null
   >(null);
+  const [selectedMemoryPath, setSelectedMemoryPath] = useState<string | null>(
+    null,
+  );
+  const [sessionMenuOpenId, setSessionMenuOpenId] = useState<string | null>(
+    null,
+  );
+  const [sessionTitlesById, setSessionTitlesById] = useState<
+    Record<string, string>
+  >({});
+  const [inspector, setInspector] = useState<InspectorState | null>(null);
+
+  const memoryTree = useMemoryStore((state) => state.tree);
+  const memoryFilePath = useMemoryStore((state) => state.openFilePath);
+  const memoryFileContent = useMemoryStore((state) => state.openFileContent);
+  const memoryDirty = useMemoryStore((state) => state.dirty);
+  const memoryLoading = useMemoryStore((state) => state.loading);
+  const memorySaving = useMemoryStore((state) => state.saving);
+  const memoryError = useMemoryStore((state) => state.error);
+  const initialiseMemory = useMemoryStore((state) => state.initialise);
+  const openMemoryFile = useMemoryStore((state) => state.openFile);
+  const closeMemoryFile = useMemoryStore((state) => state.closeFile);
+  const setMemoryFileContent = useMemoryStore(
+    (state) => state.setOpenFileContent,
+  );
+  const saveMemoryFile = useMemoryStore((state) => state.saveOpenFile);
+  const removeMemoryFile = useMemoryStore((state) => state.deleteFile);
 
   const {
     messageInput,
@@ -94,6 +283,7 @@ export default function App() {
     activeSkills,
     traceHistory,
     sendMessage,
+    cancelMessage,
   } = useChatSession({
     currentSession,
     provider,
@@ -112,8 +302,12 @@ export default function App() {
     if (!teacher) {
       return;
     }
-    void Promise.all([initialiseSessions(), initialiseWorkspace()]);
-  }, [teacher, initialiseSessions, initialiseWorkspace]);
+    void Promise.all([
+      initialiseSessions(),
+      initialiseWorkspace(),
+      initialiseMemory(),
+    ]);
+  }, [teacher, initialiseSessions, initialiseWorkspace, initialiseMemory]);
 
   useEffect(() => {
     if (!teacher) {
@@ -146,6 +340,18 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [workspaceDirty, workspaceFilePath, saveWorkspaceFile]);
 
+  useEffect(() => {
+    if (!memoryDirty || !memoryFilePath) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void saveMemoryFile();
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [memoryDirty, memoryFilePath, saveMemoryFile]);
+
   const messages = useMemo(
     () => currentSession?.messages ?? [],
     [currentSession?.messages],
@@ -161,10 +367,227 @@ export default function App() {
     }
     return findNodeByPath(workspaceTree, selectedWorkspacePath);
   }, [workspaceTree, selectedWorkspacePath]);
+  const workspaceFolderPaths = useMemo(
+    () => collectFolderPaths(workspaceTree),
+    [workspaceTree],
+  );
 
   const openSessionInChat = async (sessionId: string) => {
     closeWorkspaceFile();
+    closeMemoryFile();
+    setSelectedSkillName(null);
+    setInspector(null);
     await selectSession(sessionId);
+  };
+
+  const expandAllWorkspaceFolders = () => {
+    for (const path of workspaceFolderPaths) {
+      if (!(expandedFolders[path] ?? true)) {
+        toggleFolder(path);
+      }
+    }
+  };
+
+  const collapseAllWorkspaceFolders = () => {
+    for (const path of workspaceFolderPaths) {
+      if (expandedFolders[path] ?? true) {
+        toggleFolder(path);
+      }
+    }
+  };
+
+  const toggleSidebarSection = (section: SidebarSection) => {
+    setSidebarSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  };
+
+  const loadSkillContent = async (skillName: string) => {
+    if (skillContentByName[skillName]) {
+      return;
+    }
+
+    setSkillLoadingName(skillName);
+    try {
+      const loaded = await readSkill(skillName);
+      setSkillContentByName((current) => ({
+        ...current,
+        [skillName]: loaded.content,
+      }));
+      setSkillErrorByName((current) => {
+        const next = { ...current };
+        delete next[skillName];
+        return next;
+      });
+    } catch (error) {
+      setSkillErrorByName((current) => ({
+        ...current,
+        [skillName]:
+          error instanceof Error ? error.message : "Failed to load skill file",
+      }));
+    } finally {
+      setSkillLoadingName(null);
+    }
+  };
+
+  const openSkill = (skillName: string) => {
+    closeWorkspaceFile();
+    closeMemoryFile();
+    setSelectedSkillName(skillName);
+    void loadSkillContent(skillName);
+  };
+
+  const inspectSkill = async (skillName: string) => {
+    if (!skillName) {
+      return;
+    }
+    setInspector({
+      source: "skill",
+      title: skillName,
+      content: skillContentByName[skillName] ?? "",
+      loading: !skillContentByName[skillName],
+      error: null,
+      renderMode: "markdown",
+    });
+
+    if (skillContentByName[skillName]) {
+      return;
+    }
+
+    try {
+      const loaded = await readSkill(skillName);
+      setSkillContentByName((current) => ({
+        ...current,
+        [skillName]: loaded.content,
+      }));
+      setInspector((current) =>
+        current && current.source === "skill" && current.title === skillName
+          ? {
+              ...current,
+              content: loaded.content,
+              loading: false,
+              error: null,
+            }
+          : current,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load skill file";
+      setInspector((current) =>
+        current && current.source === "skill" && current.title === skillName
+          ? { ...current, loading: false, error: message }
+          : current,
+      );
+    }
+  };
+
+  const inspectWorkspacePath = async (path: string) => {
+    const virtualContent = virtualWorkspaceContextContent({
+      path,
+      selectedClassRef,
+      classRefs,
+      workspaceTree,
+    });
+    if (virtualContent !== null) {
+      setInspector({
+        source: "workspace",
+        title: path,
+        content: virtualContent,
+        loading: false,
+        error: null,
+        renderMode: "markdown",
+      });
+      return;
+    }
+
+    setInspector({
+      source: "workspace",
+      title: path,
+      content: "",
+      loading: true,
+      error: null,
+      renderMode: "markdown",
+    });
+    try {
+      const file = await readWorkspaceFileApi(path);
+      setInspector((current) =>
+        current && current.source === "workspace" && current.title === path
+          ? {
+              ...current,
+              content: file.content,
+              loading: false,
+              error: null,
+            }
+          : current,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Failed to load workspace file: ${path}`;
+      setInspector((current) =>
+        current && current.source === "workspace" && current.title === path
+          ? { ...current, loading: false, error: message }
+          : current,
+      );
+    }
+  };
+
+  const inspectMemoryPath = async (path: string) => {
+    setInspector({
+      source: "memory",
+      title: path,
+      content: "",
+      loading: true,
+      error: null,
+      renderMode: "markdown",
+    });
+    try {
+      const file = await readMemoryFileApi(path);
+      setInspector((current) =>
+        current && current.source === "memory" && current.title === path
+          ? {
+              ...current,
+              content: file.content,
+              loading: false,
+              error: null,
+            }
+          : current,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Failed to load memory file: ${path}`;
+      setInspector((current) =>
+        current && current.source === "memory" && current.title === path
+          ? { ...current, loading: false, error: message }
+          : current,
+      );
+    }
+  };
+
+  const inspectPrompt = (prompt: string, label: string) => {
+    setInspector({
+      source: "prompt",
+      title: label,
+      content: prompt,
+      loading: false,
+      error: null,
+      renderMode: "pre",
+    });
+  };
+
+  const inspectRawResponse = (content: string, label: string) => {
+    setInspector({
+      source: "response",
+      title: label,
+      content,
+      loading: false,
+      error: null,
+      renderMode: "pre",
+    });
   };
 
   if (!teacher) {
@@ -178,39 +601,232 @@ export default function App() {
     <Shell
       sidebarOpen={sidebarOpen}
       onToggleSidebar={() => setSidebarOpen((current) => !current)}
-      header={
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+      sidebar={
+        <div className="flex h-full min-h-0 flex-col px-3 py-3">
+          <div className="mb-3">
             <h1 className="font-display text-xl">Teacher Assist</h1>
-            <p className="text-sm text-ink-800">{teacher.name}</p>
+            <p className="text-sm text-ink-700">{teacher.name}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="rounded-lg border border-paper-100 px-2 py-1 text-sm"
-              value={provider}
-              onChange={(event) => {
-                const nextProvider = event.target.value as Provider;
-                const fallbackModel = MODEL_OPTIONS[nextProvider][0];
-                setProvider(nextProvider);
-                setModel(fallbackModel);
+
+          <div className="space-y-2">
+            <button
+              className="w-full rounded-lg border border-paper-300 px-3 py-2 text-left text-sm font-medium transition hover:border-accent-500"
+              type="button"
+              onClick={() => {
+                closeWorkspaceFile();
+                closeMemoryFile();
+                setSelectedSkillName(null);
+                setInspector(null);
+                setFocusComposerToken((current) => current + 1);
+                void createNewSession();
               }}
             >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
-            <select
-              className="rounded-lg border border-paper-100 px-2 py-1 text-sm"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-            >
-              {MODEL_OPTIONS[provider].map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+              <span className="inline-flex items-center gap-2">
+                <MessageSquarePlus className="h-4 w-4" />
+                New Session
+              </span>
+            </button>
+          </div>
+
+          <section className="mt-4">
+            <SectionHeader
+              title="Workspace"
+              expanded={sidebarSections.workspace}
+              onToggle={() => toggleSidebarSection("workspace")}
+            />
+            {sidebarSections.workspace ? (
+              <WorkspaceSidebar
+                workspaceTree={workspaceTree}
+                workspaceFilesCount={workspaceFiles.length}
+                expandedFolders={expandedFolders}
+                activeFilePath={workspaceFilePath}
+                selectedWorkspacePath={selectedWorkspacePath}
+                selectedWorkspaceNode={selectedWorkspaceNode}
+                workspaceError={workspaceError}
+                onSelectWorkspacePath={setSelectedWorkspacePath}
+                onToggleFolder={toggleFolder}
+                onOpenWorkspaceFile={async (path) => {
+                  setSelectedSkillName(null);
+                  setInspector(null);
+                  closeMemoryFile();
+                  await openWorkspaceFile(path);
+                }}
+                onResetWorkspace={resetWorkspace}
+                onUndoWorkspaceReset={undoWorkspaceReset}
+                canUndoWorkspaceReset={canUndoWorkspaceReset}
+                onRenameWorkspacePath={renameWorkspacePath}
+                onCreateWorkspaceFile={createWorkspaceFile}
+                onDeleteWorkspacePath={removeWorkspacePath}
+                onExpandAllFolders={expandAllWorkspaceFolders}
+                onCollapseAllFolders={collapseAllWorkspaceFolders}
+              />
+            ) : null}
+          </section>
+
+          <section className="mt-4">
+            <SectionHeader
+              title="Skills"
+              expanded={sidebarSections.skills}
+              onToggle={() => toggleSidebarSection("skills")}
+            />
+            {sidebarSections.skills ? (
+              <div className="space-y-1">
+                {skills.map((skill) => {
+                  const isSelected = selectedSkillName === skill.name;
+                  return (
+                    <button
+                      key={skill.name}
+                      className={`w-full rounded-lg border px-2 py-1.5 text-left transition ${isSelected ? "border-accent-500 bg-surface-selected" : "border-paper-300 hover:border-paper-400 hover:bg-surface-muted"}`}
+                      type="button"
+                      onClick={() => openSkill(skill.name)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 text-sm font-semibold">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          {skill.name}
+                        </span>
+                        {activeSkills.includes(skill.name) ? (
+                          <span className="rounded-full bg-accent-100 px-2 py-0.5 text-[11px] text-accent-700">
+                            Active
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-xs text-ink-700">
+                        {skill.description}
+                      </p>
+                    </button>
+                  );
+                })}
+                {skills.length === 0 && !skillsError ? (
+                  <p className="text-sm text-ink-700">No skills available.</p>
+                ) : null}
+                {skillsError ? (
+                  <p className="text-sm text-danger-700">{skillsError}</p>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="mt-4">
+            <SectionHeader
+              title="Memory"
+              expanded={sidebarSections.memory}
+              onToggle={() => toggleSidebarSection("memory")}
+            />
+            {sidebarSections.memory ? (
+              <>
+                <MemoryTree
+                  tree={memoryTree}
+                  selectedPath={selectedMemoryPath}
+                  onSelectFile={(path) => {
+                    setSelectedMemoryPath(path);
+                    setSelectedSkillName(null);
+                    setInspector(null);
+                    closeWorkspaceFile();
+                    void openMemoryFile(path);
+                  }}
+                />
+                {memoryError ? (
+                  <p className="mt-2 text-sm text-danger-700">{memoryError}</p>
+                ) : null}
+              </>
+            ) : null}
+          </section>
+
+          <section className="mt-4">
+            <SectionHeader
+              title="Sessions"
+              expanded={sidebarSections.sessions}
+              onToggle={() => toggleSidebarSection("sessions")}
+            />
+            {sidebarSections.sessions ? (
+              <div className="space-y-1">
+                {sessions.map((session) => {
+                  const isCurrent =
+                    !workspaceFilePath &&
+                    !memoryFilePath &&
+                    !selectedSkillName &&
+                    currentSession?.id === session.id;
+
+                  return (
+                    <div
+                      key={session.id}
+                      className={`group rounded-lg border px-2 py-1.5 transition ${isCurrent ? "border-accent-500 bg-surface-selected" : "border-paper-300 hover:border-paper-400 hover:bg-surface-muted"}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          className="min-w-0 flex-1 text-left text-sm"
+                          type="button"
+                          onClick={() => void openSessionInChat(session.id)}
+                        >
+                          <span className="block truncate">
+                            {sessionTitle(session, sessionTitlesById)}
+                          </span>
+                          <span className="text-xs text-ink-700">
+                            {formatRelativeTime(session.updatedAt)}
+                          </span>
+                        </button>
+                        <div className="relative">
+                          <button
+                            className="rounded-md px-1.5 py-0.5 text-xs text-ink-700 opacity-0 transition group-hover:opacity-100"
+                            type="button"
+                            aria-label={`Session actions for ${sessionTitle(session, sessionTitlesById)}`}
+                            onClick={() => {
+                              setSessionMenuOpenId((current) =>
+                                current === session.id ? null : session.id,
+                              );
+                            }}
+                          >
+                            <Ellipsis className="h-4 w-4" />
+                          </button>
+                          {sessionMenuOpenId === session.id ? (
+                            <div className="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-paper-300 bg-surface-panel p-1 text-xs shadow">
+                              <button
+                                className="block w-full rounded px-2 py-1 text-left hover:bg-paper-100"
+                                type="button"
+                                onClick={() => {
+                                  const nextTitle = window.prompt(
+                                    "Rename session",
+                                    sessionTitle(session, sessionTitlesById),
+                                  );
+                                  if (nextTitle?.trim()) {
+                                    setSessionTitlesById((current) => ({
+                                      ...current,
+                                      [session.id]: nextTitle.trim(),
+                                    }));
+                                  }
+                                  setSessionMenuOpenId(null);
+                                }}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                className="block w-full rounded px-2 py-1 text-left text-danger-700 hover:bg-danger-50"
+                                type="button"
+                                onClick={() => {
+                                  void deleteSession(session.id);
+                                  setSessionMenuOpenId(null);
+                                }}
+                              >
+                                Archive
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {sessions.length === 0 ? (
+                  <p className="text-sm text-ink-700">No sessions yet.</p>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          <div className="mt-auto pt-4">
             <button
-              className="rounded-lg border border-paper-100 px-3 py-1 text-sm"
+              className="rounded-lg border border-paper-300 px-3 py-1.5 text-sm hover:border-accent-500"
               type="button"
               onClick={() => void logout()}
             >
@@ -219,220 +835,60 @@ export default function App() {
           </div>
         </div>
       }
-      sidebar={
-        <div className="space-y-4">
-          <section>
-            <div className="mb-2 grid grid-cols-3 gap-1">
-              <button
-                className={`rounded-lg border px-2 py-1 text-xs ${sidebarTab === "sessions" ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
-                type="button"
-                onClick={() => setSidebarTab("sessions")}
-              >
-                Sessions
-              </button>
-              <button
-                className={`rounded-lg border px-2 py-1 text-xs ${sidebarTab === "workspace" ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
-                type="button"
-                onClick={() => setSidebarTab("workspace")}
-              >
-                Workspace
-              </button>
-              <button
-                className={`rounded-lg border px-2 py-1 text-xs ${sidebarTab === "skills" ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
-                type="button"
-                onClick={() => setSidebarTab("skills")}
-              >
-                Skills
-              </button>
-            </div>
-          </section>
-
-          {sidebarTab === "workspace" ? (
-            <WorkspaceSidebar
-              workspaceTree={workspaceTree}
-              workspaceFilesCount={workspaceFiles.length}
-              expandedFolders={expandedFolders}
-              activeFilePath={workspaceFilePath}
-              selectedWorkspacePath={selectedWorkspacePath}
-              selectedWorkspaceNode={selectedWorkspaceNode}
-              workspaceError={workspaceError}
-              onSelectWorkspacePath={setSelectedWorkspacePath}
-              onToggleFolder={toggleFolder}
-              onOpenWorkspaceFile={openWorkspaceFile}
-              onResetWorkspace={resetWorkspace}
-              onUndoWorkspaceReset={undoWorkspaceReset}
-              canUndoWorkspaceReset={canUndoWorkspaceReset}
-              onRenameWorkspacePath={renameWorkspacePath}
-              onCreateWorkspaceFile={createWorkspaceFile}
-              onDeleteWorkspacePath={removeWorkspacePath}
-            />
-          ) : null}
-
-          {sidebarTab === "sessions" ? (
-            <section>
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="font-display text-lg">Sessions</h2>
+    >
+      {workspaceFilePath || memoryFilePath ? (
+        <div className="h-full">
+          <section className="flex h-full min-h-0 flex-col rounded-[20px] border border-paper-200 bg-surface-panel p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="truncate text-sm">
+                Editing {workspaceFilePath ?? memoryFilePath}
+              </p>
+              <div className="flex items-center gap-1">
                 <button
-                  className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
+                  className="rounded-lg border border-paper-300 px-2 py-0.5 text-xs"
                   type="button"
                   onClick={() => {
                     closeWorkspaceFile();
-                    setSidebarTab("sessions");
-                    setFocusComposerToken((current) => current + 1);
-                    void createNewSession();
+                    closeMemoryFile();
                   }}
-                >
-                  New
-                </button>
-              </div>
-              <div className="space-y-2">
-                {sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`rounded-lg border p-2 ${!workspaceFilePath && currentSession?.id === session.id ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
-                  >
-                    <button
-                      className="w-full text-left text-sm"
-                      type="button"
-                      onClick={() => void openSessionInChat(session.id)}
-                    >
-                      {session.messages[0]?.content.slice(0, 48) ||
-                        "New session"}
-                    </button>
-                    <div className="mt-2 flex items-center justify-between text-xs text-ink-800">
-                      <span>
-                        {new Date(session.updatedAt).toLocaleString()}
-                      </span>
-                      <button
-                        className="rounded border border-paper-100 px-2 py-0.5"
-                        type="button"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "Delete this session? This cannot be undone.",
-                            )
-                          ) {
-                            void deleteSession(session.id);
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {sessions.length === 0 ? (
-                  <p className="text-sm text-ink-800">No sessions yet.</p>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          {sidebarTab === "skills" ? (
-            <section>
-              <h2 className="mb-2 font-display text-lg">Skills</h2>
-              <div className="space-y-2">
-                {skills.map((skill) => (
-                  <div
-                    key={skill.name}
-                    className={`rounded-lg border p-2 ${activeSkills.includes(skill.name) ? "border-accent-600 bg-paper-50" : "border-paper-100"}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        className="text-left text-sm font-medium underline decoration-dotted underline-offset-2"
-                        type="button"
-                        onClick={() => {
-                          void (async () => {
-                            setSkillLoading(true);
-                            setSelectedSkillName(skill.name);
-                            try {
-                              const loaded = await readSkill(skill.name);
-                              setSelectedSkillContent(loaded.content);
-                              setSkillsError(null);
-                            } catch (error) {
-                              setSelectedSkillContent("");
-                              setSkillsError(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Failed to load skill file",
-                              );
-                            } finally {
-                              setSkillLoading(false);
-                            }
-                          })();
-                        }}
-                      >
-                        {skill.name}
-                      </button>
-                      {activeSkills.includes(skill.name) ? (
-                        <span className="text-xs text-accent-600">Active</span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-xs text-ink-800">
-                      {skill.description}
-                    </p>
-                  </div>
-                ))}
-                {skills.length === 0 && !skillsError ? (
-                  <p className="text-sm text-ink-800">No skills available.</p>
-                ) : null}
-                {skillsError ? (
-                  <p className="text-sm text-red-700">{skillsError}</p>
-                ) : null}
-                {selectedSkillName ? (
-                  <div className="rounded-lg border border-paper-100 bg-white p-2">
-                    <p className="text-xs font-medium">
-                      {skillLoading
-                        ? `Loading ${selectedSkillName}...`
-                        : `${selectedSkillName} (full file)`}
-                    </p>
-                    {!skillLoading ? (
-                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">
-                        {selectedSkillContent}
-                      </pre>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-        </div>
-      }
-    >
-      {workspaceFilePath ? (
-        <div className="h-[70vh]">
-          <section className="flex h-full min-h-0 flex-col rounded-lg border border-paper-100 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="truncate text-sm">Editing {workspaceFilePath}</p>
-              <div className="flex items-center gap-1">
-                <button
-                  className="rounded border border-paper-100 px-2 py-0.5 text-xs"
-                  type="button"
-                  onClick={() => closeWorkspaceFile()}
                 >
                   Back to chat
                 </button>
                 <button
-                  className="rounded border border-paper-100 px-2 py-0.5 text-xs"
+                  className="rounded-lg border border-paper-300 px-2 py-0.5 text-xs"
                   type="button"
-                  onClick={() => void saveWorkspaceFile()}
-                  disabled={workspaceSaving}
+                  onClick={() => {
+                    if (workspaceFilePath) {
+                      void saveWorkspaceFile();
+                    } else if (memoryFilePath) {
+                      void saveMemoryFile();
+                    }
+                  }}
+                  disabled={workspaceSaving || memorySaving}
                 >
-                  {workspaceSaving
+                  {workspaceSaving || memorySaving
                     ? "Saving..."
-                    : workspaceDirty
+                    : workspaceDirty || memoryDirty
                       ? "Save"
                       : "Saved"}
                 </button>
                 <button
-                  className="rounded border border-paper-100 px-2 py-0.5 text-xs"
+                  className="rounded-lg border border-paper-300 px-2 py-0.5 text-xs"
                   type="button"
                   onClick={() => {
                     if (workspaceFilePath === "soul.md") {
                       return;
                     }
-                    if (window.confirm(`Delete ${workspaceFilePath}?`)) {
-                      void removeWorkspaceFile(workspaceFilePath);
+                    const target = workspaceFilePath ?? memoryFilePath;
+                    if (!target) {
+                      return;
+                    }
+                    if (window.confirm(`Delete ${target}?`)) {
+                      if (workspaceFilePath) {
+                        void removeWorkspaceFile(workspaceFilePath);
+                      } else if (memoryFilePath) {
+                        void removeMemoryFile(memoryFilePath);
+                      }
                     }
                   }}
                   disabled={workspaceFilePath === "soul.md"}
@@ -443,35 +899,137 @@ export default function App() {
             </div>
             <Suspense
               fallback={
-                <p className="text-xs text-ink-800">Loading editor...</p>
+                <p className="text-xs text-ink-700">Loading editor...</p>
               }
             >
               <WorkspaceEditor
-                key={workspaceFilePath}
-                value={workspaceFileContent}
-                onChange={setWorkspaceFileContent}
-                disabled={workspaceLoading}
+                key={workspaceFilePath ?? memoryFilePath ?? "editor"}
+                value={
+                  workspaceFilePath ? workspaceFileContent : memoryFileContent
+                }
+                onChange={
+                  workspaceFilePath
+                    ? setWorkspaceFileContent
+                    : setMemoryFileContent
+                }
+                disabled={workspaceLoading || memoryLoading}
               />
             </Suspense>
           </section>
         </div>
+      ) : selectedSkillName ? (
+        <section className="mx-auto flex h-full w-full max-w-4xl flex-col rounded-[20px] border border-paper-200 bg-surface-panel p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="font-display text-xl">{selectedSkillName}</h2>
+            <button
+              className="rounded-lg border border-paper-300 px-2 py-1 text-xs"
+              type="button"
+              onClick={() => setSelectedSkillName(null)}
+            >
+              Back to chat
+            </button>
+          </div>
+          <div className="overflow-y-auto pr-1">
+            {skillLoadingName === selectedSkillName ? (
+              <p className="text-xs text-ink-700">Loading...</p>
+            ) : null}
+            {skillErrorByName[selectedSkillName] ? (
+              <p className="text-xs text-danger-700">
+                {skillErrorByName[selectedSkillName]}
+              </p>
+            ) : null}
+            {skillContentByName[selectedSkillName] ? (
+              <MarkdownRenderer
+                content={skillContentByName[selectedSkillName]}
+              />
+            ) : null}
+          </div>
+        </section>
       ) : (
-        <ChatPane
-          classRefs={classRefs}
-          selectedClassRef={selectedClassRef}
-          setSelectedClassRef={setSelectedClassRef}
-          contextHistory={currentSession?.contextHistory ?? []}
-          traceHistory={traceHistory}
-          messages={messages}
-          chatLoading={chatLoading}
-          chatError={chatError}
-          sessionError={sessionError}
-          messageInput={messageInput}
-          setMessageInput={setMessageInput}
-          focusComposerToken={focusComposerToken}
-          sessionLoading={sessionLoading}
-          sendMessage={sendMessage}
-        />
+        <div className="relative h-full">
+          <MemoryCaptureCard
+            sessionId={currentSession?.id ?? null}
+            onSubmitted={refreshSessions}
+          />
+          <div
+            className={`h-full pr-0 transition-[padding] duration-200 ease-out ${inspector ? "lg:pr-[26rem]" : ""}`}
+          >
+            <ChatPane
+              classRefs={classRefs}
+              selectedClassRef={selectedClassRef}
+              setSelectedClassRef={setSelectedClassRef}
+              contextHistory={currentSession?.contextHistory ?? []}
+              memoryContextHistory={currentSession?.memoryContextHistory ?? []}
+              traceHistory={traceHistory}
+              messages={messages}
+              chatLoading={chatLoading}
+              chatError={chatError}
+              sessionError={sessionError}
+              messageInput={messageInput}
+              setMessageInput={setMessageInput}
+              focusComposerToken={focusComposerToken}
+              sessionLoading={sessionLoading}
+              provider={provider}
+              model={model}
+              setProvider={(nextProvider) => {
+                const fallbackModel = MODEL_OPTIONS[nextProvider][0];
+                setProvider(nextProvider);
+                setModel(fallbackModel);
+              }}
+              setModel={setModel}
+              onInspectSkill={inspectSkill}
+              onInspectWorkspacePath={inspectWorkspacePath}
+              onInspectMemoryPath={inspectMemoryPath}
+              onInspectPrompt={inspectPrompt}
+              onInspectRawResponse={inspectRawResponse}
+              sendMessage={sendMessage}
+              cancelMessage={cancelMessage}
+            />
+          </div>
+          <aside
+            className={`pointer-events-none absolute inset-y-0 right-0 hidden w-[25rem] border-l border-paper-300 bg-surface-panel transition-transform duration-200 ease-out lg:block ${inspector ? "translate-x-0 pointer-events-auto" : "translate-x-full"}`}
+          >
+            {inspector ? (
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex items-center justify-between border-b border-paper-300 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-wide text-ink-700">
+                      {inspector.source}
+                    </p>
+                    <p className="truncate text-sm font-semibold">
+                      {inspector.title}
+                    </p>
+                  </div>
+                  <button
+                    className="rounded p-1 text-ink-700 transition hover:text-ink-900"
+                    type="button"
+                    aria-label="Close inspector"
+                    onClick={() => setInspector(null)}
+                  >
+                    <PanelRightClose className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                  {inspector.loading ? (
+                    <p className="text-xs text-ink-700">Loading…</p>
+                  ) : null}
+                  {inspector.error ? (
+                    <p className="text-xs text-danger-700">{inspector.error}</p>
+                  ) : null}
+                  {!inspector.loading && !inspector.error ? (
+                    inspector.renderMode === "pre" ? (
+                      <pre className="whitespace-pre-wrap text-xs leading-5">
+                        {inspector.content}
+                      </pre>
+                    ) : (
+                      <MarkdownRenderer content={inspector.content} />
+                    )
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </aside>
+        </div>
       )}
     </Shell>
   );

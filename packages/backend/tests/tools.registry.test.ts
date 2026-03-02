@@ -95,4 +95,37 @@ describe("tool registry", () => {
     expect(completeResult.isError).toBe(false);
     expect(completeResult.output.includes('"completed": true')).toBe(true);
   });
+
+  it("supports read_memory and update_memory", async () => {
+    await resetStores();
+    await upsertTeacher({
+      id: teacherId,
+      email: "tool-registry@example.com",
+      name: "Tool Registry Teacher",
+      passwordHash: "test-hash",
+    });
+
+    const writeResult = await dispatchToolCall(
+      {
+        id: "memory-1",
+        name: "update_memory",
+        input: { path: "MEMORY.md", content: "Prefer short starters." },
+      },
+      { teacherId },
+    );
+
+    expect(writeResult.isError).toBe(false);
+
+    const readResult = await dispatchToolCall(
+      {
+        id: "memory-2",
+        name: "read_memory",
+        input: { path: "MEMORY.md" },
+      },
+      { teacherId },
+    );
+
+    expect(readResult.isError).toBe(false);
+    expect(readResult.output.includes("Prefer short starters.")).toBe(true);
+  });
 });

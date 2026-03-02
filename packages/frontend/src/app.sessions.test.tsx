@@ -11,6 +11,7 @@ vi.mock("./api/chat");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
 vi.mock("./api/skills");
+vi.mock("./api/memory");
 
 beforeEach(() => {
   setupDefaultMocks();
@@ -50,7 +51,9 @@ describe("App sessions", () => {
 
     await screen.findByText("Existing starter prompt");
     await user.click(
-      screen.getByRole("button", { name: /Existing starter prompt/i }),
+      screen.getByRole("button", {
+        name: /^Existing starter prompt just now$/i,
+      }),
     );
 
     const resumed = await screen.findAllByText("Loaded session response");
@@ -89,27 +92,27 @@ describe("App sessions", () => {
 
     await screen.findByText("Existing starter prompt");
     await user.click(
-      screen.getByRole("button", { name: /Existing starter prompt/i }),
+      screen.getByRole("button", {
+        name: /^Existing starter prompt just now$/i,
+      }),
     );
 
     const sessionCardButton = screen.getByRole("button", {
-      name: /Existing starter prompt/i,
+      name: /^Existing starter prompt just now$/i,
     });
-    expect(sessionCardButton.parentElement?.className).toContain(
-      "border-accent-600",
+    expect(sessionCardButton.parentElement?.parentElement?.className).toContain(
+      "border-accent-500",
     );
 
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-    await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
+    await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
     await screen.findByText("Editing soul.md");
 
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
     const refreshedSessionCardButton = screen.getByRole("button", {
-      name: /Existing starter prompt/i,
+      name: /^Existing starter prompt just now$/i,
     });
-    expect(refreshedSessionCardButton.parentElement?.className).not.toContain(
-      "border-accent-600",
-    );
+    expect(
+      refreshedSessionCardButton.parentElement?.parentElement?.className,
+    ).not.toContain("border-accent-500");
   });
 
   it("opens chat when selecting a session while editor is open", async () => {
@@ -143,13 +146,13 @@ describe("App sessions", () => {
     render(<App />);
 
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-    await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
+    await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
     await screen.findByText("Editing soul.md");
 
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
     await user.click(
-      screen.getByRole("button", { name: /Existing starter prompt/i }),
+      screen.getByRole("button", {
+        name: /^Existing starter prompt just now$/i,
+      }),
     );
 
     await screen.findByPlaceholderText("Type your message...");
@@ -209,13 +212,14 @@ describe("App sessions", () => {
 
     await screen.findByText("Existing starter prompt");
     await user.click(
-      screen.getByRole("button", { name: /Existing starter prompt/i }),
+      screen.getByRole("button", {
+        name: /^Existing starter prompt just now$/i,
+      }),
     );
 
-    await screen.findByText("Context added");
-    await screen.findByText("Final model response");
+    await screen.findByText(/prompt embellished: context added/i);
+    await screen.findByText("Assistant response");
 
-    await user.click(screen.getByRole("button", { name: "Skills" }));
     await screen.findByText("Active");
   });
 
@@ -226,12 +230,10 @@ describe("App sessions", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
-    await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
+    await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
     await screen.findByText("Editing soul.md");
 
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
-    await user.click(screen.getByRole("button", { name: "New" }));
+    await user.click(screen.getByRole("button", { name: /New Session/i }));
 
     const input = await screen.findByPlaceholderText("Type your message...");
     await waitFor(() => {

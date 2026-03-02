@@ -38,10 +38,12 @@ function toSessionRecord(entity: SessionEntity): SessionRecord {
     teacherId: entity.teacherId,
     provider: entity.provider as Provider,
     model: entity.model,
+    classRef: entity.classRef,
     messages: parseArray<ChatMessage>(entity.messages),
     tasks: parseArray<SessionTask>(entity.tasks),
     traceHistory: parseArray<ChatTrace>(entity.traceHistory),
     contextHistory: parseArray<string[]>(entity.contextHistory),
+    memoryContextHistory: parseArray<string[]>(entity.memoryContextHistory),
     activeSkills: parseArray<string>(entity.activeSkills),
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
@@ -93,6 +95,7 @@ export async function createSession(params: {
   teacherId: string;
   provider: Provider;
   model: string;
+  classRef?: string | null;
   messages?: ChatMessage[];
   tasks?: SessionTask[];
 }): Promise<SessionRecord> {
@@ -103,10 +106,12 @@ export async function createSession(params: {
     teacherId: params.teacherId,
     provider: params.provider,
     model: params.model,
+    classRef: params.classRef ?? null,
     messages: params.messages ?? [],
     tasks: params.tasks ?? [],
     traceHistory: [],
     contextHistory: [],
+    memoryContextHistory: [],
     activeSkills: [],
     command: null,
     agentName: null,
@@ -147,7 +152,9 @@ export async function appendSessionMessages(
   runtime?: {
     trace?: ChatTrace;
     contextPaths?: string[];
+    memoryContextPaths?: string[];
     activeSkills?: string[];
+    classRef?: string | null;
   },
 ): Promise<SessionRecord | null> {
   const ds = await getDataSource();
@@ -168,6 +175,9 @@ export async function appendSessionMessages(
   if (model) {
     existing.model = model;
   }
+  if (runtime?.classRef !== undefined) {
+    existing.classRef = runtime.classRef;
+  }
   if (runtime?.trace) {
     existing.traceHistory = [
       runtime.trace,
@@ -178,6 +188,12 @@ export async function appendSessionMessages(
     existing.contextHistory = [
       runtime.contextPaths,
       ...parseArray<string[]>(existing.contextHistory),
+    ];
+  }
+  if (runtime?.memoryContextPaths) {
+    existing.memoryContextHistory = [
+      runtime.memoryContextPaths,
+      ...parseArray<string[]>(existing.memoryContextHistory),
     ];
   }
   if (runtime?.activeSkills) {
@@ -222,6 +238,8 @@ export async function resetStores(): Promise<void> {
 
   await ds.query("TRUNCATE TABLE sessions RESTART IDENTITY CASCADE");
   await ds.query("TRUNCATE TABLE teachers RESTART IDENTITY CASCADE");
+  await ds.query("TRUNCATE TABLE memory_events RESTART IDENTITY CASCADE");
+  await ds.query("TRUNCATE TABLE memory_files RESTART IDENTITY CASCADE");
 
   authTokens.clear();
   rateLimitMap.clear();

@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   Res,
 } from "@nestjs/common";
@@ -43,6 +44,24 @@ export class SessionsController {
   async list(@Req() request: Request) {
     const teacher = await this.authService.requireTeacher(request);
     return this.sessionsService.list(teacher.id);
+  }
+
+  @Get("search/query")
+  async search(
+    @Req() request: Request,
+    @Query("q") query = "",
+    @Query("classId") classId?: string,
+    @Query("dateFrom") dateFrom?: string,
+    @Query("dateTo") dateTo?: string,
+  ) {
+    const teacher = await this.authService.requireTeacher(request);
+    return this.sessionsService.search({
+      teacherId: teacher.id,
+      query,
+      classId,
+      dateFrom,
+      dateTo,
+    });
   }
 
   @Get(":sessionId")

@@ -26,6 +26,9 @@ export class SessionEntity {
   @Column({ type: "text" })
   model!: string;
 
+  @Column({ name: "class_ref", type: "text", nullable: true })
+  classRef!: string | null;
+
   @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
   messages!: unknown;
 
@@ -45,6 +48,13 @@ export class SessionEntity {
     default: () => "'[]'::jsonb",
   })
   contextHistory!: unknown;
+
+  @Column({
+    name: "memory_context_history",
+    type: "jsonb",
+    default: () => "'[]'::jsonb",
+  })
+  memoryContextHistory!: unknown;
 
   @Column({
     name: "active_skills",

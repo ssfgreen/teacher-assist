@@ -10,7 +10,11 @@ import {
 import type { Request, Response } from "express";
 
 import { AuthService } from "../auth/auth.service";
-import { type ChatRequestBody, ChatService } from "./chat.service";
+import {
+  type ChatRequestBody,
+  ChatService,
+  type MemoryResponseBody,
+} from "./chat.service";
 
 @Controller("api/chat")
 export class ChatController {
@@ -31,10 +35,20 @@ export class ChatController {
     const teacher = await this.authService.requireTeacher(request);
 
     if (body.stream) {
-      await this.chatService.handleChat(teacher.id, body, response);
+      await this.chatService.handleChat(teacher.id, body, request, response);
       return undefined;
     }
 
-    return this.chatService.handleChat(teacher.id, body);
+    return this.chatService.handleChat(teacher.id, body, request);
+  }
+
+  @Post("memory-response")
+  @HttpCode(200)
+  async memoryResponse(
+    @Req() request: Request,
+    @Body() body: MemoryResponseBody,
+  ) {
+    const teacher = await this.authService.requireTeacher(request);
+    return this.chatService.handleMemoryResponse(teacher.id, body);
   }
 }

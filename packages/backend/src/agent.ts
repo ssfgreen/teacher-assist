@@ -15,6 +15,11 @@ export interface AgentResult {
   skillsLoaded: string[];
 }
 
+export interface AgentStreamEvent {
+  message: ChatMessage;
+  isFinalAssistant: boolean;
+}
+
 interface RunAgentLoopParams {
   teacherId: string;
   sessionId?: string;
@@ -137,6 +142,138 @@ export async function runAgentLoop(
         toolInput: toolCall.input,
         toolError: result.isError,
         content,
+      });
+    }
+  }
+
+  return {
+    status: "error_max_turns",
+    messages: messages.filter((message) => message.role !== "system"),
+    usage,
+    skillsLoaded: [...skillsLoaded],
+  };
+}
+
+export async function runAgentLoopStreaming(
+  params: RunAgentLoopParams & {
+    onEvent: (event: AgentStreamEvent) => Promise<void> | void;
+    chunkAssistantText?: (content: string) => string[];
+    shouldStop?: () => boolean;
+  },
+): Promise<AgentResult> {
+  const maxTurns = params.options?.maxTurns ?? 25;
+  const maxBudgetUsd = params.options?.maxBudgetUsd ?? Number.POSITIVE_INFINITY;
+  const chunkAssistantText =
+    params.chunkAssistantText ??
+    ((content: string) => {
+      const chunks = content.match(/\S+\s*/g);
+      return chunks ?? [content];
+    });
+
+  const messages = [...params.messages];
+  let usage = emptyUsage();
+  const skillsLoaded = new Set<string>();
+
+  const toolContext: ToolContext = {
+    teacherId: params.teacherId,
+    sessionId: params.sessionId,
+  };
+  const tools = listToolDefinitions();
+
+  const stopped = () => Boolean(params.shouldStop?.());
+
+  for (let turn = 0; turn < maxTurns; turn += 1) {
+    if (stopped()) {
+      return {
+        status: "success",
+        messages: messages.filter((message) => message.role !== "system"),
+        usage,
+        skillsLoaded: [...skillsLoaded],
+      };
+    }
+
+    if (usage.estimatedCostUsd > maxBudgetUsd) {
+      return {
+        status: "error_max_budget",
+        messages: messages.filter((message) => message.role !== "system"),
+        usage,
+        skillsLoaded: [...skillsLoaded],
+      };
+    }
+
+    const response = await callModel(
+      params.provider,
+      params.model,
+      messages,
+      params.maxTokens,
+      tools,
+    );
+    usage = addUsage(usage, response.usage);
+
+    if (response.content.trim()) {
+      let running = "";
+      for (const chunk of chunkAssistantText(response.content)) {
+        if (stopped()) {
+          return {
+            status: "success",
+            messages: messages.filter((message) => message.role !== "system"),
+            usage,
+            skillsLoaded: [...skillsLoaded],
+          };
+        }
+        running += chunk;
+        await params.onEvent({
+          message: { role: "assistant", content: running },
+          isFinalAssistant: response.toolCalls.length === 0,
+        });
+      }
+      messages.push({ role: "assistant", content: response.content });
+    }
+
+    if (response.toolCalls.length === 0) {
+      return {
+        status: "success",
+        messages: messages.filter((message) => message.role !== "system"),
+        usage,
+        skillsLoaded: [...skillsLoaded],
+      };
+    }
+
+    for (const toolCall of response.toolCalls) {
+      if (stopped()) {
+        return {
+          status: "success",
+          messages: messages.filter((message) => message.role !== "system"),
+          usage,
+          skillsLoaded: [...skillsLoaded],
+        };
+      }
+
+      const result = await dispatchToolCall(toolCall, toolContext);
+      const content = result.isError
+        ? `ERROR: ${result.output}`
+        : result.output;
+
+      if (result.name === "read_skill" && !result.isError) {
+        const skillName = skillNameFromToolInput(toolCall.input);
+        if (skillName) {
+          skillsLoaded.add(skillName);
+        }
+      }
+
+      const toolMessage: ChatMessage = {
+        role: "tool",
+        toolCallId: toolCall.id,
+        toolName: result.name,
+        toolInput: toolCall.input,
+        toolError: result.isError,
+        content,
+      };
+
+      messages.push(toolMessage);
+      await params.onEvent({
+        message: toolMessage,
+        isFinalAssistant: false,
       });
     }
   }

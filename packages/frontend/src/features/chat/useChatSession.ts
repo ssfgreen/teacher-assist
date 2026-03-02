@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { sendChatStream } from "../../api/chat";
+import { useMemoryStore } from "../../stores/memoryStore";
 import type { ChatMessage, ChatTrace, SessionRecord } from "../../types";
 
 interface UseChatSessionParams {
@@ -24,10 +25,16 @@ export function useChatSession({
 }: UseChatSessionParams) {
   const currentSessionId = currentSession?.id ?? null;
   const previousSessionIdRef = useRef<string | null>(currentSessionId);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const setMemoryProposals = useMemoryStore((state) => state.setProposals);
+
   const [messageInput, setMessageInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [lastContextPaths, setLastContextPaths] = useState<string[]>([]);
+  const [lastMemoryContextPaths, setLastMemoryContextPaths] = useState<
+    string[]
+  >([]);
   const [activeSkills, setActiveSkills] = useState<string[]>([]);
   const [traceHistory, setTraceHistory] = useState<ChatTrace[]>([]);
   const [contextExpanded, setContextExpanded] = useState(false);
@@ -40,6 +47,7 @@ export function useChatSession({
     previousSessionIdRef.current = currentSessionId;
     setTraceHistory(currentSession?.traceHistory ?? []);
     setLastContextPaths(currentSession?.contextHistory?.[0] ?? []);
+    setLastMemoryContextPaths(currentSession?.memoryContextHistory?.[0] ?? []);
     setActiveSkills(currentSession?.activeSkills ?? []);
   }, [currentSession, currentSessionId]);
 
@@ -52,6 +60,9 @@ export function useChatSession({
     setChatLoading(true);
     setChatError(null);
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       const activeSession = currentSession ?? (await createNewSession());
       const nextMessages = [
@@ -60,6 +71,7 @@ export function useChatSession({
       ];
 
       let assistantContent = "";
+      const streamedToolMessages: ChatMessage[] = [];
       const streamBaseSession = {
         ...activeSession,
         provider,
@@ -86,20 +98,39 @@ export function useChatSession({
           classRef: selectedClassRef || undefined,
           messages: nextMessages,
         },
-        (delta) => {
-          assistantContent += delta;
-          upsertCurrentSession({
-            ...streamBaseSession,
-            updatedAt: new Date().toISOString(),
-            messages: [
-              ...nextMessages,
-              {
-                role: "assistant",
-                content: assistantContent,
-              },
-            ],
-          });
+        {
+          onDelta: (delta) => {
+            assistantContent += delta;
+            upsertCurrentSession({
+              ...streamBaseSession,
+              updatedAt: new Date().toISOString(),
+              messages: [
+                ...nextMessages,
+                ...streamedToolMessages,
+                {
+                  role: "assistant",
+                  content: assistantContent,
+                },
+              ],
+            });
+          },
+          onMessage: (message) => {
+            streamedToolMessages.push(message);
+            upsertCurrentSession({
+              ...streamBaseSession,
+              updatedAt: new Date().toISOString(),
+              messages: [
+                ...nextMessages,
+                ...streamedToolMessages,
+                {
+                  role: "assistant",
+                  content: assistantContent,
+                },
+              ],
+            });
+          },
         },
+        abortController.signal,
       );
 
       upsertCurrentSession({
@@ -116,23 +147,44 @@ export function useChatSession({
               ...(activeSession.contextHistory ?? []),
             ]
           : (activeSession.contextHistory ?? []),
+        memoryContextHistory: response.memoryContextLoaded
+          ? [
+              response.memoryContextLoaded,
+              ...(activeSession.memoryContextHistory ?? []),
+            ]
+          : (activeSession.memoryContextHistory ?? []),
         activeSkills: response.skillsLoaded ?? activeSession.activeSkills ?? [],
       });
       setLastContextPaths(response.workspaceContextLoaded ?? []);
+      setLastMemoryContextPaths(response.memoryContextLoaded ?? []);
       setActiveSkills(response.skillsLoaded ?? []);
       if (response.trace) {
-        const trace = response.trace;
-        setTraceHistory((previous) => [trace, ...previous]);
+        setTraceHistory((previous) => [
+          response.trace as ChatTrace,
+          ...previous,
+        ]);
+      }
+      if (response.status === "awaiting_memory_capture" && response.proposals) {
+        setMemoryProposals(response.proposals);
       }
       setMessageInput("");
       await refreshSessions();
     } catch (error) {
-      setChatError(
-        error instanceof Error ? error.message : "Failed to send message",
-      );
+      if (error instanceof Error && error.name === "AbortError") {
+        setChatError("Generation cancelled");
+      } else {
+        setChatError(
+          error instanceof Error ? error.message : "Failed to send message",
+        );
+      }
     } finally {
+      abortControllerRef.current = null;
       setChatLoading(false);
     }
+  };
+
+  const cancelMessage = () => {
+    abortControllerRef.current?.abort();
   };
 
   return {
@@ -143,8 +195,10 @@ export function useChatSession({
     contextExpanded,
     setContextExpanded,
     lastContextPaths,
+    lastMemoryContextPaths,
     activeSkills,
     traceHistory,
     sendMessage,
+    cancelMessage,
   };
 }

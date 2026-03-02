@@ -2,7 +2,7 @@
 
 Monorepo scaffold for the `teacher-assist` research prototype.
 
-This repository currently includes Sprint 0, Sprint 1, Sprint 2, and a substantial Sprint 3 slice:
+This repository currently includes Sprint 0 through Sprint 5:
 - Monorepo workspaces (`packages/backend`, `packages/frontend`)
 - Bun + TypeScript setup
 - NestJS backend module architecture (controllers/services)
@@ -19,8 +19,11 @@ This repository currently includes Sprint 0, Sprint 1, Sprint 2, and a substanti
 - Tool registry + built-in tools (`read_file`, `write_file`, `str_replace`, `list_directory`, `read_skill`, `update_tasks`)
 - Skill manifest and tiered skill loading from `skills/`
 - Chat response message-chain transparency (tool messages + loaded skills metadata)
-- Frontend tool-call blocks and sidebar `Skills` tab with active-skill highlighting
+- Frontend tool-call blocks and sidebar `Skills` section with active-skill highlighting
 - Frontend and backend critical-path automated tests
+- Streaming loop UI improvements (cancel, streamed tool-step visibility, typing cursor, auto-scroll)
+- Memory system (teacher/class memory files, memory APIs, prompt injection, memory-capture confirmation flow)
+- Session search tooling over persisted session text
 
 ## OpenAI Tools and Skills Note
 
@@ -216,7 +219,7 @@ Logs are written to:
 - `POST /api/chat` with `model: "mock-agentic-error"` returns tool error in chain and recovers with final assistant response
 - Frontend chat renders tool-call summary blocks and expandable args/result sections
 - Frontend chat renders structured assistant lesson sections as distinct cards
-- Frontend `Skills` tab shows available skills and highlights active loaded skills
+- Frontend `Skills` sidebar section shows available skills, highlights active loaded skills, and opens rendered markdown in the main pane
 
 ## Database Migrations
 
@@ -246,4 +249,4 @@ If you switch computers or recreate Docker volumes, rerun the migration command 
 
 - Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
 - Workspace editor now uses Milkdown (Crepe) for markdown editing
-- Real-provider native tool-call adapters are wired for non-stream model calls; streaming multi-turn tool loops are still validated primarily with mock-agentic models
+- Full backend integration tests require PostgreSQL running locally (`docker compose up -d`) before `cd packages/backend && bun test`

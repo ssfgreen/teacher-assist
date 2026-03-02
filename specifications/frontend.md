@@ -260,8 +260,10 @@ App
 
 - Render a single unified timeline (one scroll region) for all interaction events in chronological order.
 - Timeline includes user prompts, context-added events, intermediate assistant/tool steps, and final assistant responses as inline bubbles.
-- Every bubble is expandable for details (tool args/result, context files, trace metadata, prompt snapshot).
-- Intermediate agentic steps are visually offset and lighter to distinguish them from final responses.
+- Intermediate agentic steps remain lightweight and collapsible (lower visual weight than teacher-facing output).
+- Group consecutive homogeneous tool calls into inspectable summaries (e.g. `Reading skills`, `Exploring files`) with chevrons.
+- Final assistant responses are always expanded in full (no extra click required).
+- Token usage is available from hover affordances on trace icons.
 
 #### Skill Manifest Display
 
@@ -270,6 +272,14 @@ App
 - Read-only for MVP — skills are authored by the researcher, not editable by teachers
 - When a skill is loaded during a session (Tier 2 or 3), highlight it in the manifest as "active"
 - Clicking a skill opens full `SKILL.md` content via backend API (frontend remains read-only)
+- Timeline skill references are clickable and open skill content in a right-hand inspector panel.
+
+#### Secondary Inspector Panel
+
+- Add a third UI region: a secondary sidebar that slides in from the right.
+- Inspector opens from timeline interactions (skill references, workspace context items, memory context items).
+- Inspector renders markdown with lightweight markdown rendering for skills and markdown context files.
+- Inspector can be dismissed without losing chat scroll/state.
 
 #### Enhanced Message Rendering
 
@@ -294,11 +304,12 @@ ChatWindow
 └── ChatInput
 
 Sidebar
-├── Sessions tab
-├── Workspace tab
-└── Skills tab (new)
-    └── SkillManifest
-        └── SkillItem (name, description, active indicator)
+├── Workspace section
+├── Sessions section
+├── Skills section
+│   └── SkillManifest
+│       └── SkillItem (name, description, active indicator)
+└── Memory section
 ```
 
 ### Tests
@@ -315,7 +326,7 @@ Sidebar
 - [x] Single inline chat timeline combines user/context/tool/model events in chronological order
 - [x] Bubble-level detail expansion for tools, context, and trace metadata (no separate trace panel)
 - [x] Message ordering preserved with interleaved tool/result messages
-- [x] Sidebar tabs for `Sessions`, `Workspace`, and new `Skills` manifest tab
+- [x] Unified collapsible sidebar sections for `Workspace`, `Sessions`, `Skills`, and `Memory`
 - [x] Skill manifest loaded from backend and rendered read-only
 - [x] Skill panel aligned to root `skills/` + `SKILL.md` model (Agent Skills style)
 - [x] Active skill highlighting from chat response `skillsLoaded`
@@ -323,168 +334,94 @@ Sidebar
 - [x] Trace/context/active-skill session metadata restored when reopening sessions after relogin
 - [x] Frontend test coverage for tool-call rendering and active skill highlighting
 - [x] Structured section-aware rendering beyond markdown headings (deeper adjudication-ready section model)
+- [x] Grouped tool-step summaries (`Reading skills` / `Exploring files`) with expandable details
+- [x] Right-hand inspector panel for clickable skill/context references from timeline
+- [x] Main chat scroll position preserved while opening inspector content from timeline links
+- [x] `View full prompt` action added to trace-backed timeline rows and rendered in inspector as raw prompt text
+- [x] `View raw response` action added to final assistant rows for exact unrendered model text inspection
+- [x] Inspector supports mixed render modes: markdown for files/skills, preformatted text for full prompt inspection
+- [x] Final assistant responses render fully expanded by default
+- [x] Redundant composer loading text removed; thinking state uses inline spinner in timeline rows
+- [x] Token usage shown on graph-icon hover/title
+- [x] Assistant markdown rendering supports GFM and single-line breaks for correct newline display
+- [x] Assistant/inspector markdown uses explicit typography styles so lists, indentation, spacing, and links render correctly
+- [x] Virtual workspace context files (`classes/index.md`, `classes/catalog.md`, `curriculum/catalog.md`) inspect correctly in sidebar
+- [x] Consecutive duplicate tool rows are collapsed in timeline grouping to prevent double-counted skill reads
 
 ---
 
-## Sprint 4 — Commands + Interactive Hooks UI
+## Sprint 3.5 — Workspace-First Chat Layout Refresh
 
-**Goal:** Teachers can invoke named commands. Feedforward, reflection, and adjudication hooks are rendered as interactive UI elements. The full interaction loop — feedforward confirmation → generation → reflection → adjudication — works end to end.
+**Goal:** Align the interface with product spec §3.5 (transparency over automation) by making the workspace and chat feel continuous, inspectable, and low-friction without fragmented chrome.
 
-### Deliverables
+### Status (Implemented 2026-03-02)
 
-#### Command Palette / Selector
+- [x] Header removed; layout now uses full viewport height for sidebar + main workspace
+- [x] Sidebar remains full-height and resizable (default ~20%, bounded min/max)
+- [x] Sidebar actions unified into one continuous surface (no card-like sectional backgrounds)
+- [x] Logout moved to bottom-left of sidebar
+- [x] Model/provider controls moved below the chat input row
+- [x] Skills entry simplified to a single icon treatment
+- [x] Workspace tree no longer has an inner scroll container
+- [x] Workspace controls now include icon-based `Open all folders` and `Close all folders`
+- [x] Chat composer starts as a single-line input and auto-grows up to a max height
+- [x] Send control moved inside the composer (floating bottom-right)
+- [x] Dedicated cancel button removed; send control becomes stop icon while generation is active
+- [x] Tailwind theme expanded with semantic tokens and frontend color usage migrated to theme tokens
+- [x] Removed `gap-3` utility usage from updated UI surfaces
 
-- Command selector in chat input area: teachers can choose a command (e.g. "Create Lesson", "Refine Lesson") or type freely
-- Commands loaded from `GET /api/commands`
-- When a command is selected, the chat input may show structured fields (e.g. "Topic: ___", "Class: ___") based on command metadata
-- Commands can also be invoked by typing (e.g. `/create-lesson iteration for 3B`)
+### Principled Design Decisions
 
-#### Feedforward Confirmation UI
-
-- When the backend returns `status: 'awaiting_feedforward'`:
-  - Display a feedforward card in the chat showing the surfaced context
-  - Context shown in readable format: class profile summary, teacher preferences, curriculum, memory notes
-  - Three actions: **Confirm** (proceed with all context), **Edit** (modify the context summary), **Dismiss** (proceed without surfaced context)
-  - Teacher's choice sent to `POST /api/chat/feedforward-response`
-  - After confirmation, chat shows "Context confirmed ✓" indicator and proceeds to generation
-
-#### Reflection Prompt UI
-
-- When the response includes `reflectionPrompts`:
-  - Display reflection questions in a distinct card before the adjudication controls
-  - Questions are displayed as prompts for thought, not requiring typed answers (though a text field is available)
-  - Teacher can acknowledge ("I've considered this") or skip
-  - Responses logged via the API
-
-#### Adjudication Controls
-
-- When the backend returns `status: 'awaiting_adjudication'` with sections:
-  - Each section of the output (Starter, Main Activity, Plenary, Worksheet, Quiz, Revision Guide) displayed as a distinct card
-  - Per section, three buttons: **Accept** ✓, **Revise** ✏️, **Alternatives** ↻
-  - **Accept**: marks section as approved, collapses it with green indicator
-  - **Revise**: opens inline text field for revision instructions (e.g. "Make this shorter", "Add more scaffolding for EAL"). Sends to `POST /api/chat/adjudication-response` which re-enters the agent loop.
-  - **Alternatives**: requests 2–3 variants. Backend returns alternatives, displayed as tabs or stacked cards. Teacher selects one.
-  - Bulk actions: "Accept All" button for when the output is good
-  - Decisions sent to `POST /api/chat/adjudication-response`
-
-#### Interactive State Management
-
-- Chat flow now has multiple states: `idle`, `loading`, `awaiting_feedforward`, `awaiting_reflection`, `awaiting_adjudication`, `awaiting_memory_capture` (Sprint 6)
-- UI adapts based on current state:
-  - `loading`: typing indicator, input disabled
-  - `awaiting_feedforward`: feedforward card shown, input disabled
-  - `awaiting_adjudication`: adjudication controls shown, input disabled
-  - Other states: input enabled
-- State transitions driven by backend responses
-
-### Component Updates
-
-```
-ChatWindow
-├── ContextIndicator
-├── MessageList
-│   ├── UserMessage
-│   ├── AssistantMessage
-│   ├── ToolCallBlock
-│   ├── FeedforwardCard (new — interactive)
-│   │   ├── ContextSummary
-│   │   └── Actions (Confirm | Edit | Dismiss)
-│   ├── ReflectionCard (new — interactive)
-│   │   ├── ReflectionQuestions
-│   │   └── Actions (Acknowledged | Skip)
-│   └── AdjudicationSection (new — per output section)
-│       ├── SectionContent (rendered markdown)
-│       └── Actions (Accept | Revise | Alternatives)
-│           ├── RevisionInput (conditional)
-│           └── AlternativesView (conditional, tabbed)
-└── ChatInput
-    ├── CommandSelector (new)
-    ├── ClassSelector
-    └── TextInput
-```
+- **Continuity over segmentation:** Sidebar, workspace tree, and conversation controls are presented as one continuous workspace surface to reduce visual mode switching.
+- **Primary actions at point-of-use:** Message send/stop lives inside the composer; model/provider/class controls live directly beneath the composer where prompt intent is set.
+- **Transparent but lightweight system state:** Intermediate steps remain inspectable via expandable timeline rows, but visual weight favors final teacher-facing output.
+- **Stable spatial ownership:** Full-height sidebar and bottom-anchored composer preserve consistent muscle-memory targets across long sessions.
+- **Predictable control density:** Global file-tree controls (`Open all` / `Close all`) are explicit and always available, avoiding hidden nested state traps.
+- **Theme-governed styling:** Color decisions are centralized in Tailwind theme tokens to improve consistency, maintainability, and future palette iteration.
 
 ### Tests
 
-- Command selector loads and displays available commands
-- Feedforward card: renders context summary, confirm sends correct API call, edit opens text editor, dismiss proceeds
-- Reflection card: renders questions, acknowledge/skip logged
-- Adjudication: each section shows three buttons, Accept collapses section, Revise opens input + sends revision, Alternatives shows variants
-- State transitions: feedforward → loading → reflection → adjudication → idle
-- Bulk accept works
-- Revision re-enters loop and shows updated section
+- Provider/model selection still drives request payloads after controls moved under composer
+- Composer Enter/Shift+Enter behavior remains correct with auto-resize enabled
+- Streaming state toggles composer action from send to stop and aborts generation
+- Workspace tree folder bulk open/close controls correctly update visible expansion state
 
 ---
 
-## Sprint 5 — Traces Viewer + Full Skills Display
+## Sprint 4 — Streaming UI
 
-**Goal:** A trace viewer for researchers (and optionally teachers) to inspect what happened during a session. Full pedagogical skills visible in the skills tab with tier indicators.
+**Goal:** Improve chat responsiveness with token-by-token rendering and streaming-aware loop visibility.
+
+### Status (Implemented 2026-03-02)
+
+- [x] Token-by-token rendering of assistant responses
+- [x] Cursor/typing indicator during streaming
+- [x] Tool call blocks appear as stream events arrive
+- [x] Inline stop control in composer aborts generation mid-stream
+- [x] Smooth auto-scroll while streaming
 
 ### Deliverables
 
-#### Trace Viewer
-
-- Accessible from session list: each session has a "View Trace" option
-- Trace timeline view:
-  - Chronological list of spans (model calls, tool calls, hook executions, skill loads)
-  - Each span shows: type icon, name, duration, timestamp
-  - Expandable to show details (token counts, cost, arguments, results)
-- Summary bar: total tokens, total cost, number of tool calls, skills used, hooks triggered
-- Filter by span type (model calls only, tool calls only, hooks only)
-- This is primarily a research tool — behind a "Developer/Research" toggle or accessible only to researcher accounts
-
-#### Trace API Integration
-
-```typescript
-GET /api/traces                  → list traces
-GET /api/traces/:id              → full trace with spans
-GET /api/sessions/:id/traces     → traces for a session
-```
-
-Notes:
-- Trace/tool availability is backend-driven (including MCP-backed tools configured in backend `mcp.json`); frontend only renders what backend reports.
-- Frontend does not define or host tools.
-
-#### Enhanced Skills Tab
-
-- Full skill listing with Tier 1 descriptions
-- Grouped by category (pedagogy, curriculum, assessment)
-- Each skill shows: name, one-line description, tier indicator (1/2/3 showing what's been loaded in this session)
-- Click skill → read-only view of SKILL.md content (Tier 2)
-- Useful for teachers to understand what knowledge the system has access to
-
-### Component Updates
-
-```
-Sidebar
-├── Sessions tab
-│   └── SessionItem (now with "View Trace" action)
-├── Workspace tab
-└── Skills tab
-    └── SkillManifest (enhanced)
-        └── SkillItem (name, description, tier badge, expandable)
-
-TraceViewer (new — modal or panel)
-├── TraceSummary (tokens, cost, duration)
-├── TraceTimeline
-│   └── TraceSpan (type icon, name, duration)
-│       └── SpanDetail (expandable)
-└── TraceFilters (by span type)
-```
-
-### Tests
-
-- Trace viewer loads and displays spans chronologically
-- Span expansion shows correct details
-- Filter by type works
-- Summary bar shows correct totals
-- Skills tab shows all skills with descriptions
-- Tier indicators update when skills loaded in session
+- Token-by-token rendering of assistant responses
+- Cursor/typing animation during streaming
+- Tool call blocks appear as they're detected in the stream
+- Inline stop control to abort generation mid-stream
+- Smooth scrolling to follow streaming content
 
 ---
 
-## Sprint 6 — Memory UI
+## Sprint 5 — Memory UI
 
 **Goal:** Memory files visible and editable in the workspace sidebar. Memory-capture hook renders as an interactive confirmation UI at session end. Feedforward now shows memory-sourced context with visual distinction.
+
+### Status (Implemented 2026-03-02)
+
+- [x] Memory tab with editable memory files (`MEMORY.md`, `classes/*/MEMORY.md`)
+- [x] Memory CRUD wired to `/api/memory/*path`
+- [x] Memory-capture card with per-proposal confirm/edit/dismiss + bulk actions
+- [x] Decision submit flow wired to `POST /api/chat/memory-response`
+- [x] Feedforward/context display now separates workspace context from memory context
+- [x] Dedicated `useMemoryStore` for memory tree/file + capture proposals/decisions
 
 ### Deliverables
 
@@ -575,7 +512,48 @@ ChatWindow
 
 ---
 
-## Sprint 7 — Subagent Rendering
+## Spring 5.5 - Updating UI
+
+The sidebar shouldn't use tabs, it should be structured as:
+
+- [pencil-icon] New Session
+- [four-circles-icon] Skills (main section renders list of skills that can be expanded)
+
+Workspace (a heading)
+[folder-icon] Wokspace folder 1 (three dots on hover, if clicked given dropdown list of new folder, new file,  archive; pencil icon to rename
+ - [file-icon] File 1 (three dots on hover: archive, rename)
+ etc
+
+Sessions 
+List of sessions with last created (3d, 31mins etc) shown in line. (three dots on hover, if clicked - archive, rename)
+
+Markdown responses from system should be rendered using markdown renderer.
+
+Main chat session
+Intermediate agent actions should be less bold, with more ability to inspect.
+- Start with just a plain text description. i.e - "Read Skill: backward-design"
+- If you hover over the text of this skill, it will highlight (go bold) and show you a chevron.
+- If you click anywhere on the text, it will expand to show you the body content.
+- In the top right is a small chart icon, that if you hover , you can see the call tokens.
+
+Another example:
+- "Prompt Embellished: Context added" 
+- If you hover, you get the chevron.
+- If you click, you see the different components that were added as titles. Each of these can be clicked.
+- In the top right is a small chart icon, that if you hover , you can see the call tokens.
+
+Visually, the whole screen should be used.
+
+Sidebar size is editable, but defaults to ~20%.
+Sidebar should be light grey
+Border radiuses should be ~20px
+Use blue style instead of orange.
+User promtps should be green. Responses a nice blue (like whatsapp)
+The prompt box should be fixed to the bottom middle, unless no content / fresh slate - it should be centred.
+The chat scroll should continue all the way to the prompt box.
+
+
+## Sprint 6 — Subagent Rendering
 
 **Goal:** When the planner spawns subagents, the frontend shows this delegation transparently. Teachers can see what was delegated, to whom, and the result.
 
@@ -597,8 +575,8 @@ ChatWindow
 #### Agent Indicator
 
 - Small indicator in the chat showing which agent is currently active
-- For Sprint 7 (subagents only): shows "Planner" with occasional "Resource Creator (working...)" when subagent is active
-- Prepares for Sprint 8 (handoffs) where the active agent changes for the conversation
+- For Sprint 6 (subagents only): shows "Planner" with occasional "Resource Creator (working...)" when subagent is active
+- Prepares for Sprint 7 (handoffs) where the active agent changes for the conversation
 - Indicator also shows background activity count when delegated runs continue asynchronously
 
 #### Updated Trace Viewer
@@ -633,7 +611,7 @@ Header
 
 ---
 
-## Sprint 8 — Handoff Rendering
+## Sprint 7 — Handoff Rendering
 
 **Goal:** When an agent hands off to another, the frontend shows the transition clearly. The chat continues seamlessly but the teacher knows which specialist is now active.
 
@@ -689,15 +667,163 @@ Header
 
 ---
 
-## Sprint 9+ — Additional Elements
+## Sprint 8 — Commands + Interactive Hooks UI
 
-### Sprint 9: Streaming UI
+**Goal:** Teachers can invoke named commands. Feedforward, reflection, and adjudication hooks are rendered as interactive UI elements. The full interaction loop — feedforward confirmation → generation → reflection → adjudication — works end to end.
 
-- Token-by-token rendering of assistant responses
-- Cursor/typing animation during streaming
-- Tool call blocks appear as they're detected in the stream
-- Cancel button to abort generation mid-stream
-- Smooth scrolling to follow streaming content
+### Deliverables
+
+#### Command Palette / Selector
+
+- Command selector in chat input area: teachers can choose a command (e.g. "Create Lesson", "Refine Lesson") or type freely
+- Commands loaded from `GET /api/commands`
+- When a command is selected, the chat input may show structured fields (e.g. "Topic: ___", "Class: ___") based on command metadata
+- Commands can also be invoked by typing (e.g. `/create-lesson iteration for 3B`)
+
+#### Feedforward Confirmation UI
+
+- When the backend returns `status: 'awaiting_feedforward'`:
+  - Display a feedforward card in the chat showing the surfaced context
+  - Context shown in readable format: class profile summary, teacher preferences, curriculum, memory notes
+  - Three actions: **Confirm** (proceed with all context), **Edit** (modify the context summary), **Dismiss** (proceed without surfaced context)
+  - Teacher's choice sent to `POST /api/chat/feedforward-response`
+  - After confirmation, chat shows "Context confirmed ✓" indicator and proceeds to generation
+
+#### Reflection Prompt UI
+
+- When the response includes `reflectionPrompts`:
+  - Display reflection questions in a distinct card before the adjudication controls
+  - Questions are displayed as prompts for thought, not requiring typed answers (though a text field is available)
+  - Teacher can acknowledge ("I've considered this") or skip
+  - Responses logged via the API
+
+#### Adjudication Controls
+
+- When the backend returns `status: 'awaiting_adjudication'` with sections:
+  - Each section of the output (Starter, Main Activity, Plenary, Worksheet, Quiz, Revision Guide) displayed as a distinct card
+  - Per section, three buttons: **Accept** ✓, **Revise** ✏️, **Alternatives** ↻
+  - **Accept**: marks section as approved, collapses it with green indicator
+  - **Revise**: opens inline text field for revision instructions (e.g. "Make this shorter", "Add more scaffolding for EAL"). Sends to `POST /api/chat/adjudication-response` which re-enters the agent loop.
+  - **Alternatives**: requests 2–3 variants. Backend returns alternatives, displayed as tabs or stacked cards. Teacher selects one.
+  - Bulk actions: "Accept All" button for when the output is good
+  - Decisions sent to `POST /api/chat/adjudication-response`
+
+#### Interactive State Management
+
+- Chat flow now has multiple states: `idle`, `loading`, `awaiting_feedforward`, `awaiting_reflection`, `awaiting_adjudication`, `awaiting_memory_capture` (Sprint 5)
+- UI adapts based on current state:
+  - `loading`: typing indicator, input disabled
+  - `awaiting_feedforward`: feedforward card shown, input disabled
+  - `awaiting_adjudication`: adjudication controls shown, input disabled
+  - Other states: input enabled
+- State transitions driven by backend responses
+
+### Component Updates
+
+```
+ChatWindow
+├── ContextIndicator
+├── MessageList
+│   ├── UserMessage
+│   ├── AssistantMessage
+│   ├── ToolCallBlock
+│   ├── FeedforwardCard (new — interactive)
+│   │   ├── ContextSummary
+│   │   └── Actions (Confirm | Edit | Dismiss)
+│   ├── ReflectionCard (new — interactive)
+│   │   ├── ReflectionQuestions
+│   │   └── Actions (Acknowledged | Skip)
+│   └── AdjudicationSection (new — per output section)
+│       ├── SectionContent (rendered markdown)
+│       └── Actions (Accept | Revise | Alternatives)
+│           ├── RevisionInput (conditional)
+│           └── AlternativesView (conditional, tabbed)
+└── ChatInput
+    ├── CommandSelector (new)
+    ├── ClassSelector
+    └── TextInput
+```
+
+### Tests
+
+- Command selector loads and displays available commands
+- Feedforward card: renders context summary, confirm sends correct API call, edit opens text editor, dismiss proceeds
+- Reflection card: renders questions, acknowledge/skip logged
+- Adjudication: each section shows three buttons, Accept collapses section, Revise opens input + sends revision, Alternatives shows variants
+- State transitions: feedforward → loading → reflection → adjudication → idle
+- Bulk accept works
+- Revision re-enters loop and shows updated section
+
+---
+
+## Sprint 9 — Traces Viewer + Full Skills Display
+
+**Goal:** A trace viewer for researchers (and optionally teachers) to inspect what happened during a session. Full pedagogical skills visible in the skills tab with tier indicators.
+
+### Deliverables
+
+#### Trace Viewer
+
+- Accessible from session list: each session has a "View Trace" option
+- Trace timeline view:
+  - Chronological list of spans (model calls, tool calls, hook executions, skill loads)
+  - Each span shows: type icon, name, duration, timestamp
+  - Expandable to show details (token counts, cost, arguments, results)
+- Summary bar: total tokens, total cost, number of tool calls, skills used, hooks triggered
+- Filter by span type (model calls only, tool calls only, hooks only)
+- This is primarily a research tool — behind a "Developer/Research" toggle or accessible only to researcher accounts
+
+#### Trace API Integration
+
+```typescript
+GET /api/traces                  → list traces
+GET /api/traces/:id              → full trace with spans
+GET /api/sessions/:id/traces     → traces for a session
+```
+
+Notes:
+- Trace/tool availability is backend-driven (including MCP-backed tools configured in backend `mcp.json`); frontend only renders what backend reports.
+- Frontend does not define or host tools.
+
+#### Enhanced Skills Tab
+
+- Full skill listing with Tier 1 descriptions
+- Grouped by category (pedagogy, curriculum, assessment)
+- Each skill shows: name, one-line description, tier indicator (1/2/3 showing what's been loaded in this session)
+- Click skill → read-only view of SKILL.md content (Tier 2)
+- Useful for teachers to understand what knowledge the system has access to
+
+### Component Updates
+
+```
+Sidebar
+├── Sessions tab
+│   └── SessionItem (now with "View Trace" action)
+├── Workspace tab
+└── Skills tab
+    └── SkillManifest (enhanced)
+        └── SkillItem (name, description, tier badge, expandable)
+
+TraceViewer (new — modal or panel)
+├── TraceSummary (tokens, cost, duration)
+├── TraceTimeline
+│   └── TraceSpan (type icon, name, duration)
+│       └── SpanDetail (expandable)
+└── TraceFilters (by span type)
+```
+
+### Tests
+
+- Trace viewer loads and displays spans chronologically
+- Span expansion shows correct details
+- Filter by type works
+- Summary bar shows correct totals
+- Skills tab shows all skills with descriptions
+- Tier indicators update when skills loaded in session
+
+---
+
+## Sprint 10+ — Additional Elements
 
 ### Sprint 10: Document Preview Panel
 
