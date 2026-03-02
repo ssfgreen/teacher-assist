@@ -47,6 +47,12 @@ describe("workspace storage", () => {
       readWorkspaceFile(teacherId, "classes/README.md"),
     ).resolves.toContain("Class Profile");
     await expect(
+      readWorkspaceFile(teacherId, "classes/3B/CLASS.md"),
+    ).resolves.toContain("Class 3B");
+    await expect(
+      readWorkspaceFile(teacherId, "classes/3B/CLASS.md"),
+    ).resolves.toContain("Ukrainian");
+    await expect(
       readWorkspaceFile(teacherId, "curriculum/README.md"),
     ).resolves.toContain("Curriculum Notes");
 
@@ -58,14 +64,14 @@ describe("workspace storage", () => {
     await cleanup();
 
     await seedWorkspaceForTeacher(teacherId);
-    await writeWorkspaceFile(teacherId, "classes/3B/CLASS.md", "# Class 3B");
-    expect(await readWorkspaceFile(teacherId, "classes/3B/CLASS.md")).toContain(
-      "Class 3B",
+    await writeWorkspaceFile(teacherId, "classes/3C/CLASS.md", "# Class 3C");
+    expect(await readWorkspaceFile(teacherId, "classes/3C/CLASS.md")).toContain(
+      "Class 3C",
     );
 
-    await deleteWorkspaceFile(teacherId, "classes/3B/CLASS.md");
+    await deleteWorkspaceFile(teacherId, "classes/3C/CLASS.md");
     await expect(
-      readWorkspaceFile(teacherId, "classes/3B/CLASS.md"),
+      readWorkspaceFile(teacherId, "classes/3C/CLASS.md"),
     ).rejects.toThrow();
 
     await expect(deleteWorkspaceFile(teacherId, "soul.md")).rejects.toThrow(

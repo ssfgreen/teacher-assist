@@ -39,6 +39,18 @@ const DEFAULT_CLASS_STUB = `# Class Profile
 - Prior learning:
 `;
 
+const DEFAULT_CLASS_3B = `# Class 3B
+
+- Stage: S3
+- Class size: 30
+- Needs:
+  - 1 learner with EAL (Ukrainian language support needs)
+- Engagement signals:
+  - Strong interest in weather and climate-related examples
+- Notes:
+  - Use visual scaffolds and key vocabulary pre-teaching where possible.
+`;
+
 export const CLASS_PROFILE_FILENAME = "CLASS.md";
 
 export const DEFAULT_WORKSPACE_FILES: Array<{ path: string; content: string }> =
@@ -48,6 +60,7 @@ export const DEFAULT_WORKSPACE_FILES: Array<{ path: string; content: string }> =
     { path: "pedagogy.md", content: DEFAULT_PEDAGOGY },
     { path: "curriculum/README.md", content: DEFAULT_CURRICULUM_STUB },
     { path: "classes/README.md", content: DEFAULT_CLASS_STUB },
+    { path: "classes/3B/CLASS.md", content: DEFAULT_CLASS_3B },
   ];
 
 export const WORKSPACE_DB_CONFIG_ERROR =

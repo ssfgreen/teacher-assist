@@ -56,6 +56,7 @@ export interface ChatTrace {
   createdAt: string;
   systemPrompt: string;
   estimatedPromptTokens: number;
+  usage: TokenUsage;
   status: "success" | "error_max_turns" | "error_max_budget";
   steps: ChatTraceStep[];
 }

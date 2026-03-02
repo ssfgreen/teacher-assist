@@ -31,9 +31,26 @@ export function normalize(
   };
 }
 
-export function toInputMessages(messages: ChatMessage[]): ChatMessage[] {
+interface InputMessageOptions {
+  includeSystem?: boolean;
+}
+
+export function extractSystemPrompt(messages: ChatMessage[]): string {
   return messages
-    .filter((message) => message.role !== "system")
+    .filter((message) => message.role === "system")
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function toInputMessages(
+  messages: ChatMessage[],
+  options: InputMessageOptions = {},
+): ChatMessage[] {
+  const includeSystem = options.includeSystem ?? true;
+
+  return messages
+    .filter((message) => includeSystem || message.role !== "system")
     .map((message) => {
       if (message.role !== "tool") {
         return message;

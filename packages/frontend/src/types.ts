@@ -90,6 +90,12 @@ export interface ChatTrace {
   createdAt: string;
   systemPrompt: string;
   estimatedPromptTokens: number;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  };
   status: "success" | "error_max_turns" | "error_max_budget";
   steps: ChatTraceStep[];
 }

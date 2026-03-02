@@ -211,6 +211,7 @@ export class ChatService {
       createdAt: new Date().toISOString(),
       systemPrompt,
       estimatedPromptTokens: estimatedTokens,
+      usage: agentResult.usage,
       status: agentResult.status,
       steps: agentResult.messages
         .filter((message) => message.role === "tool")

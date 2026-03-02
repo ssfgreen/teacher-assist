@@ -29,13 +29,6 @@ interface ToolDefinition extends ModelToolDefinition {
   ) => Promise<string>;
 }
 
-function addLineNumbers(content: string): string {
-  return content
-    .split("\n")
-    .map((line, index) => `${index + 1}: ${line}`)
-    .join("\n");
-}
-
 async function listDirectory(
   teacherId: string,
   directory: string,
@@ -121,7 +114,7 @@ function updateTasksFromArgs(
 const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "read_file",
-    description: "Read a workspace file and return content with line numbers.",
+    description: "Read a workspace file and return raw content.",
     parameters: {
       type: "object",
       properties: {
@@ -135,8 +128,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       if (!path) {
         throw new Error("path is required");
       }
-      const content = await readWorkspaceFile(context.teacherId, path);
-      return addLineNumbers(content);
+      return readWorkspaceFile(context.teacherId, path);
     },
   },
   {

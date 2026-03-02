@@ -47,7 +47,7 @@ describe("App workspace", () => {
       classRef: undefined,
     });
 
-    await screen.findByRole("button", { name: /Used context/i });
+    await screen.findByText("Context added");
   });
 
   it("creates a file inside the selected folder", async () => {

@@ -6,7 +6,7 @@ import type {
   ModelToolDefinition,
   ToolCall,
 } from "../../types";
-import { estimateUsage, toInputMessages } from "../shared";
+import { estimateUsage, extractSystemPrompt, toInputMessages } from "../shared";
 
 function parseAnthropicToolCalls(content: unknown): ToolCall[] {
   if (!Array.isArray(content)) {
@@ -49,13 +49,18 @@ export async function callAnthropic(
   tools?: ModelToolDefinition[],
 ): Promise<ModelResponse> {
   const client = new Anthropic({ apiKey });
+  const systemPrompt = extractSystemPrompt(messages);
+
   const response = await client.messages.create({
     model,
     max_tokens: maxTokens,
-    messages: toInputMessages(messages).map((message) => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content: message.content,
-    })),
+    system: systemPrompt || undefined,
+    messages: toInputMessages(messages, { includeSystem: false }).map(
+      (message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      }),
+    ),
     tools: tools?.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -94,14 +99,18 @@ export async function streamAnthropic(
   maxTokens = 1024,
 ): Promise<ModelResponse> {
   const client = new Anthropic({ apiKey });
+  const systemPrompt = extractSystemPrompt(messages);
   const stream = (await client.messages.create({
     model,
     max_tokens: maxTokens,
     stream: true,
-    messages: toInputMessages(messages).map((message) => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content: message.content,
-    })),
+    system: systemPrompt || undefined,
+    messages: toInputMessages(messages, { includeSystem: false }).map(
+      (message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      }),
+    ),
   })) as AsyncIterable<unknown>;
 
   let content = "";

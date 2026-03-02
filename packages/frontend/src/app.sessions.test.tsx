@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import App from "./App";
@@ -53,7 +53,8 @@ describe("App sessions", () => {
       screen.getByRole("button", { name: /Existing starter prompt/i }),
     );
 
-    await screen.findByText("Loaded session response");
+    const resumed = await screen.findAllByText("Loaded session response");
+    expect(resumed.length).toBeGreaterThan(0);
   });
 
   it("does not highlight session cards while editing a workspace file", async () => {
@@ -152,7 +153,8 @@ describe("App sessions", () => {
     );
 
     await screen.findByPlaceholderText("Type your message...");
-    await screen.findByText("Loaded session response");
+    const loaded = await screen.findAllByText("Loaded session response");
+    expect(loaded.length).toBeGreaterThan(0);
   });
 
   it("restores persisted context and trace metadata when reopening a session", async () => {
@@ -184,6 +186,12 @@ describe("App sessions", () => {
           createdAt: now,
           systemPrompt: "<assistant-identity>Identity</assistant-identity>",
           estimatedPromptTokens: 33,
+          usage: {
+            inputTokens: 12,
+            outputTokens: 6,
+            totalTokens: 18,
+            estimatedCostUsd: 0.000036,
+          },
           status: "success",
           steps: [
             { toolName: "read_skill", input: {}, output: "ok", isError: false },
@@ -204,10 +212,30 @@ describe("App sessions", () => {
       screen.getByRole("button", { name: /Existing starter prompt/i }),
     );
 
-    await screen.findByRole("button", { name: /Used context \(2\)/i });
-    await screen.findByRole("button", { name: /Trace log \(1\)/i });
+    await screen.findByText("Context added");
+    await screen.findByText("Final model response");
 
     await user.click(screen.getByRole("button", { name: "Skills" }));
     await screen.findByText("Active");
+  });
+
+  it("switches back to chat view when creating a new session", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+    await user.click(screen.getByRole("button", { name: /✦ soul.md/i }));
+    await screen.findByText("Editing soul.md");
+
+    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: "New" }));
+
+    const input = await screen.findByPlaceholderText("Type your message...");
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+    });
   });
 });

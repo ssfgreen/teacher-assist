@@ -167,6 +167,12 @@ export function setupDefaultMocks(): void {
           createdAt: "2026-02-28T00:00:00.000Z",
           systemPrompt: "<assistant-identity>Identity</assistant-identity>",
           estimatedPromptTokens: 42,
+          usage: {
+            inputTokens: 1,
+            outputTokens: 2,
+            totalTokens: 3,
+            estimatedCostUsd: 0.000006,
+          },
           status: "success",
           steps: [],
         },

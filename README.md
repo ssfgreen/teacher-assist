@@ -22,6 +22,12 @@ This repository currently includes Sprint 0, Sprint 1, Sprint 2, and a substanti
 - Frontend tool-call blocks and sidebar `Skills` tab with active-skill highlighting
 - Frontend and backend critical-path automated tests
 
+## OpenAI Tools and Skills Note
+
+- The app currently uses provider SDK tool/function calling (OpenAI + Anthropic) for backend-defined tools in `packages/backend/src/tools/registry.ts`.
+- App "skills" are local markdown bundles in repo `skills/` loaded through the `read_skill` tool.
+- This is different from OpenAI hosted `tools-shell` Skills (`tools[].environment.skills`), which are not mounted in this backend today.
+
 ## Prerequisites
 
 - Bun `>=1.3`

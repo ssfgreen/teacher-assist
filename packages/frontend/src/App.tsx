@@ -81,8 +81,7 @@ export default function App() {
   );
   const [selectedSkillContent, setSelectedSkillContent] = useState("");
   const [skillLoading, setSkillLoading] = useState(false);
-  const [traceExpanded, setTraceExpanded] = useState(false);
-  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
+  const [focusComposerToken, setFocusComposerToken] = useState(0);
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<
     string | null
   >(null);
@@ -92,9 +91,6 @@ export default function App() {
     setMessageInput,
     chatLoading,
     chatError,
-    contextExpanded,
-    setContextExpanded,
-    lastContextPaths,
     activeSkills,
     traceHistory,
     sendMessage,
@@ -137,17 +133,6 @@ export default function App() {
       }
     })();
   }, [teacher]);
-
-  useEffect(() => {
-    if (traceHistory.length === 0) {
-      setSelectedTraceId(null);
-      return;
-    }
-
-    if (!selectedTraceId) {
-      setSelectedTraceId(traceHistory[0].id);
-    }
-  }, [traceHistory, selectedTraceId]);
 
   useEffect(() => {
     if (!workspaceDirty || !workspaceFilePath) {
@@ -290,7 +275,12 @@ export default function App() {
                 <button
                   className="rounded-lg border border-paper-100 px-2 py-1 text-xs"
                   type="button"
-                  onClick={() => void createNewSession()}
+                  onClick={() => {
+                    closeWorkspaceFile();
+                    setSidebarTab("sessions");
+                    setFocusComposerToken((current) => current + 1);
+                    void createNewSession();
+                  }}
                 >
                   New
                 </button>
@@ -470,20 +460,15 @@ export default function App() {
           classRefs={classRefs}
           selectedClassRef={selectedClassRef}
           setSelectedClassRef={setSelectedClassRef}
-          lastContextPaths={lastContextPaths}
-          contextExpanded={contextExpanded}
-          setContextExpanded={setContextExpanded}
+          contextHistory={currentSession?.contextHistory ?? []}
           traceHistory={traceHistory}
-          traceExpanded={traceExpanded}
-          setTraceExpanded={setTraceExpanded}
-          selectedTraceId={selectedTraceId}
-          setSelectedTraceId={setSelectedTraceId}
           messages={messages}
           chatLoading={chatLoading}
           chatError={chatError}
           sessionError={sessionError}
           messageInput={messageInput}
           setMessageInput={setMessageInput}
+          focusComposerToken={focusComposerToken}
           sessionLoading={sessionLoading}
           sendMessage={sendMessage}
         />

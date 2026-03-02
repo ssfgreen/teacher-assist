@@ -258,17 +258,10 @@ App
 
 #### Tool Use Rendering in Chat
 
-- When the backend returns a message chain with tool calls, render them as collapsible blocks in the chat timeline:
-  - **Tool call block:** shows tool name, arguments (formatted), and result (formatted)
-  - Default: collapsed with one-line summary (e.g. "Read skill: backward-design")
-  - Expandable to show full arguments and result
-- Different visual treatment for different tool types:
-  - `read_skill` — book/knowledge icon, shows skill name and tier
-  - `read_file` / `write_file` — file icon
-  - `update_tasks` — checklist icon
-  - Generic tool — gear icon
-- Tool calls rendered in chronological order within the conversation flow
-- Assistant messages that follow tool calls are rendered normally
+- Render a single unified timeline (one scroll region) for all interaction events in chronological order.
+- Timeline includes user prompts, context-added events, intermediate assistant/tool steps, and final assistant responses as inline bubbles.
+- Every bubble is expandable for details (tool args/result, context files, trace metadata, prompt snapshot).
+- Intermediate agentic steps are visually offset and lighter to distinguish them from final responses.
 
 #### Skill Manifest Display
 
@@ -292,14 +285,12 @@ App
 
 ```
 ChatWindow
-├── ContextIndicator
-├── MessageList
-│   ├── UserMessage
-│   ├── AssistantMessage (with markdown sections)
-│   ├── ToolCallBlock (collapsible)
-│   │   ├── ToolCallSummary (icon + one-line)
-│   │   └── ToolCallDetail (args + result, expandable)
-│   └── ... (interleaved in order)
+├── MessageTimeline (single scroll container)
+│   ├── UserPromptBubble
+│   ├── ContextAddedBubble
+│   ├── ModelResponseBubble (intermediate)
+│   ├── SkillReadBubble / ToolStepBubble
+│   └── FinalModelResponseBubble
 └── ChatInput
 
 Sidebar
@@ -321,8 +312,8 @@ Sidebar
 
 ### Sprint 3 Status (Current)
 
-- [x] Collapsible tool-call blocks in chat timeline with args/result detail
-- [x] Tool-specific summaries for `read_skill`, file tools, and task updates
+- [x] Single inline chat timeline combines user/context/tool/model events in chronological order
+- [x] Bubble-level detail expansion for tools, context, and trace metadata (no separate trace panel)
 - [x] Message ordering preserved with interleaved tool/result messages
 - [x] Sidebar tabs for `Sessions`, `Workspace`, and new `Skills` manifest tab
 - [x] Skill manifest loaded from backend and rendered read-only

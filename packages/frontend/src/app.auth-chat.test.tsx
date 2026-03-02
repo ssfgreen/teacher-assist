@@ -34,7 +34,8 @@ describe("App auth and chat", () => {
       expect(chatApi.sendChatStream).toHaveBeenCalledTimes(1);
     });
 
-    await screen.findByText("Hello world");
+    const helloMatches = await screen.findAllByText("Hello world");
+    expect(helloMatches.length).toBeGreaterThan(0);
   });
 
   it("uses selected provider and model for chat requests", async () => {
@@ -135,6 +136,12 @@ describe("App auth and chat", () => {
             createdAt: "2026-02-28T00:00:00.000Z",
             systemPrompt: "<assistant-identity>Identity</assistant-identity>",
             estimatedPromptTokens: 12,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
             status: "success",
             steps: [
               {
@@ -170,8 +177,8 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Plan lesson{enter}");
 
-    await screen.findByText("Read skill: backward-design");
-    await user.click(screen.getByText("Read skill: backward-design"));
+    await screen.findByText("Skill read");
+    await user.click(screen.getByText("read_skill backward-design"));
     await screen.findByText("Arguments");
     await screen.findByText("Result");
 
@@ -207,10 +214,11 @@ describe("App auth and chat", () => {
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Plan loops{enter}");
 
-    await screen.findByRole("button", { name: /Trace log/i });
-    await user.click(screen.getByRole("button", { name: /Trace log/i }));
-    await screen.findByText("Generated prompt");
-    await screen.findByText(/Estimated prompt tokens/i);
+    await screen.findByText("Final model response");
+    await user.click(screen.getByText("Final model response"));
+    await screen.findByText("Call Details");
+    const promptTokenRows = await screen.findAllByText(/Prompt tokens/i);
+    expect(promptTokenRows.length).toBeGreaterThan(0);
   });
 
   it("renders assistant lesson sections as distinct blocks", async () => {
@@ -243,6 +251,12 @@ describe("App auth and chat", () => {
             createdAt: "2026-02-28T00:00:00.000Z",
             systemPrompt: "<assistant-identity>Identity</assistant-identity>",
             estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
             status: "success",
             steps: [],
           },
