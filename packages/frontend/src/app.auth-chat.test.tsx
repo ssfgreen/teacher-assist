@@ -221,6 +221,135 @@ describe("App auth and chat", () => {
     expect(promptTokenRows.length).toBeGreaterThan(0);
   });
 
+  it("shows thinking state while waiting for the final model response", async () => {
+    let resolveStream:
+      | ((value: Awaited<ReturnType<typeof chatApi.sendChatStream>>) => void)
+      | null = null;
+
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStream = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    await screen.findByText("Thinking");
+    const thinkingRows = await screen.findAllByText("Thinking...");
+    expect(thinkingRows.length).toBeGreaterThan(0);
+    expect(screen.queryByText("Final model response")).not.toBeInTheDocument();
+
+    resolveStream?.({
+      sessionId: "s-thinking",
+      skillsLoaded: [],
+      messages: [
+        { role: "user", content: "Plan loops" },
+        { role: "assistant", content: "Ready." },
+      ],
+      workspaceContextLoaded: [],
+      trace: {
+        id: "trace-thinking-test",
+        createdAt: "2026-03-02T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 10,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+          estimatedCostUsd: 0.000004,
+        },
+        status: "success",
+        steps: [],
+      },
+      response: {
+        content: "Ready.",
+        toolCalls: [],
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+          estimatedCostUsd: 0.000004,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    await screen.findByText("Final model response");
+  });
+
+  it("shows full final model response without truncating the summary", async () => {
+    const finalSentence = "This final sentence must remain visible.";
+    const longResponse = [
+      "This response is intentionally long so the summary line would previously be cut.",
+      "It should remain complete in the Final model response row.",
+      "The UI must not truncate this content to 160 characters anymore.",
+      finalSentence,
+    ].join(" ");
+
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, onDelta) => {
+        onDelta("Drafting...");
+        return {
+          sessionId: "s-full-response",
+          skillsLoaded: [],
+          messages: [
+            { role: "user", content: "Give me full output" },
+            { role: "assistant", content: longResponse },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-full-response-test",
+            createdAt: "2026-03-02T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 10,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: longResponse,
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Give me full output{enter}");
+
+    await screen.findByText("Final model response");
+    const visibleTail = await screen.findAllByText(/must remain visible/i);
+    expect(visibleTail.length).toBeGreaterThan(0);
+  });
+
   it("renders assistant lesson sections as distinct blocks", async () => {
     vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
       async (_params, onDelta) => {

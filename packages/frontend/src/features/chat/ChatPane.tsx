@@ -208,6 +208,24 @@ function toolPreview(message: ChatMessage): string {
   return message.toolName ?? "tool";
 }
 
+function isPendingFinalResponseEntry(
+  entry: TimelineEntry,
+  entryIndex: number,
+  entries: TimelineEntry[],
+  chatLoading: boolean,
+): boolean {
+  if (!chatLoading) {
+    return false;
+  }
+
+  return (
+    entry.kind === "final-model-response" &&
+    entry.message?.role === "assistant" &&
+    !entry.message.content.trim() &&
+    entryIndex === entries.length - 1
+  );
+}
+
 export default function ChatPane({
   classRefs,
   selectedClassRef,
@@ -262,105 +280,142 @@ export default function ChatPane({
       </div>
 
       <div className="mb-4 flex-1 space-y-3 overflow-y-auto rounded-lg border border-paper-100 p-3">
-        {entries.map((entry) => (
-          <details
-            key={entry.id}
-            className={`max-w-[88%] rounded-xl px-3 py-2 text-sm ${bubbleClasses(entry.kind)}`}
-          >
-            <summary className="cursor-pointer list-none">
-              <p className="text-xs font-semibold tracking-wide">
-                {bubbleLabel(entry.kind)}
-              </p>
-              {entry.message ? (
-                <p className="mt-1 whitespace-pre-wrap text-sm">
-                  {entry.kind === "skill-read" || entry.kind === "tool-step"
-                    ? toolPreview(entry.message)
-                    : entry.message.content.slice(0, 160) || "(empty)"}
-                </p>
-              ) : (
-                <p className="mt-1 whitespace-pre-wrap text-sm">
-                  Context loaded for this prompt.
-                </p>
-              )}
-            </summary>
-            <div className="mt-2 space-y-2 rounded-lg border border-paper-100/60 bg-white/60 p-2">
-              {entry.kind === "context-added" ? (
-                <>
-                  <div>
-                    <p className="text-xs font-semibold">Context Files</p>
-                    <ul className="mt-1 list-disc pl-4 text-xs">
-                      {(entry.contextPaths ?? []).map((path) => (
-                        <li key={path}>{displayContextPath(path)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  {entry.trace ? (
-                    <>
-                      <div className="space-y-1 text-xs text-ink-800">
-                        <p className="font-semibold">Call Tokens</p>
-                        <p>Prompt tokens: {entry.trace.usage.inputTokens}</p>
-                        <p>Response tokens: {entry.trace.usage.outputTokens}</p>
-                        <p>Total tokens: {entry.trace.usage.totalTokens}</p>
-                      </div>
-                      <details className="rounded border border-paper-100 bg-white p-2">
-                        <summary className="cursor-pointer font-medium">
-                          Full prompt
-                        </summary>
-                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap">
-                          {entry.trace.systemPrompt}
-                        </pre>
-                      </details>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
+        {entries.map((entry, entryIndex) => {
+          const isPendingFinalResponse = isPendingFinalResponseEntry(
+            entry,
+            entryIndex,
+            entries,
+            chatLoading,
+          );
 
-              {entry.message?.role === "assistant" ? (
-                <AssistantMessage content={entry.message.content} />
-              ) : null}
-
-              {entry.message?.role === "user" ? (
-                <p className="whitespace-pre-wrap text-sm">
-                  {entry.message.content}
+          return (
+            <details
+              key={entry.id}
+              className={`max-w-[88%] rounded-xl px-3 py-2 text-sm ${bubbleClasses(entry.kind)}`}
+            >
+              <summary className="cursor-pointer list-none">
+                <p className="text-xs font-semibold tracking-wide">
+                  {isPendingFinalResponse
+                    ? "Thinking"
+                    : bubbleLabel(entry.kind)}
                 </p>
-              ) : null}
-
-              {entry.message?.role === "tool" ? (
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <p className="font-semibold">Tool</p>
-                    <p>{entry.message.toolName ?? "tool"}</p>
-                    {entry.message.toolError ? (
-                      <p className="text-red-700">Execution error</p>
+                {entry.message ? (
+                  <p className="mt-1 whitespace-pre-wrap text-sm">
+                    {isPendingFinalResponse ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-900/30 border-t-ink-900"
+                          aria-hidden
+                        />
+                        <span>Thinking...</span>
+                      </span>
+                    ) : entry.kind === "skill-read" ||
+                      entry.kind === "tool-step" ? (
+                      toolPreview(entry.message)
+                    ) : entry.kind === "final-model-response" ? (
+                      entry.message.content || "(empty)"
+                    ) : (
+                      entry.message.content.slice(0, 160) || "(empty)"
+                    )}
+                  </p>
+                ) : (
+                  <p className="mt-1 whitespace-pre-wrap text-sm">
+                    Context loaded for this prompt.
+                  </p>
+                )}
+              </summary>
+              <div className="mt-2 space-y-2 rounded-lg border border-paper-100/60 bg-white/60 p-2">
+                {entry.kind === "context-added" ? (
+                  <>
+                    <div>
+                      <p className="text-xs font-semibold">Context Files</p>
+                      <ul className="mt-1 list-disc pl-4 text-xs">
+                        {(entry.contextPaths ?? []).map((path) => (
+                          <li key={path}>{displayContextPath(path)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    {entry.trace ? (
+                      <>
+                        <div className="space-y-1 text-xs text-ink-800">
+                          <p className="font-semibold">Call Tokens</p>
+                          <p>Prompt tokens: {entry.trace.usage.inputTokens}</p>
+                          <p>
+                            Response tokens: {entry.trace.usage.outputTokens}
+                          </p>
+                          <p>Total tokens: {entry.trace.usage.totalTokens}</p>
+                        </div>
+                        <details className="rounded border border-paper-100 bg-white p-2">
+                          <summary className="cursor-pointer font-medium">
+                            Full prompt
+                          </summary>
+                          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap">
+                            {entry.trace.systemPrompt}
+                          </pre>
+                        </details>
+                      </>
                     ) : null}
-                  </div>
-                  <div>
-                    <p className="font-semibold">Arguments</p>
-                    <pre className="overflow-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2">
-                      {JSON.stringify(entry.message.toolInput ?? {}, null, 2)}
-                    </pre>
-                  </div>
-                  <div>
-                    <p className="font-semibold">Result</p>
-                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2">
-                      {entry.message.content}
-                    </pre>
-                  </div>
-                </div>
-              ) : null}
+                  </>
+                ) : null}
 
-              {entry.kind === "final-model-response" && entry.trace ? (
-                <div className="space-y-1 text-xs text-ink-800">
-                  <p className="font-semibold">Call Details</p>
-                  <p>Status: {entry.trace.status}</p>
-                  <p>Prompt tokens: {entry.trace.usage.inputTokens}</p>
-                  <p>Response tokens: {entry.trace.usage.outputTokens}</p>
-                  <p>Total tokens: {entry.trace.usage.totalTokens}</p>
-                </div>
-              ) : null}
-            </div>
-          </details>
-        ))}
+                {isPendingFinalResponse ? (
+                  <p className="inline-flex items-center gap-2 whitespace-pre-wrap text-sm">
+                    <span
+                      className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-900/30 border-t-ink-900"
+                      aria-hidden
+                    />
+                    <span>Thinking...</span>
+                  </p>
+                ) : null}
+
+                {entry.message?.role === "assistant" &&
+                !isPendingFinalResponse ? (
+                  <AssistantMessage content={entry.message.content} />
+                ) : null}
+
+                {entry.message?.role === "user" ? (
+                  <p className="whitespace-pre-wrap text-sm">
+                    {entry.message.content}
+                  </p>
+                ) : null}
+
+                {entry.message?.role === "tool" ? (
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <p className="font-semibold">Tool</p>
+                      <p>{entry.message.toolName ?? "tool"}</p>
+                      {entry.message.toolError ? (
+                        <p className="text-red-700">Execution error</p>
+                      ) : null}
+                    </div>
+                    <div>
+                      <p className="font-semibold">Arguments</p>
+                      <pre className="overflow-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2">
+                        {JSON.stringify(entry.message.toolInput ?? {}, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <p className="font-semibold">Result</p>
+                      <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-paper-100 bg-white p-2">
+                        {entry.message.content}
+                      </pre>
+                    </div>
+                  </div>
+                ) : null}
+
+                {entry.kind === "final-model-response" && entry.trace ? (
+                  <div className="space-y-1 text-xs text-ink-800">
+                    <p className="font-semibold">Call Details</p>
+                    <p>Status: {entry.trace.status}</p>
+                    <p>Prompt tokens: {entry.trace.usage.inputTokens}</p>
+                    <p>Response tokens: {entry.trace.usage.outputTokens}</p>
+                    <p>Total tokens: {entry.trace.usage.totalTokens}</p>
+                  </div>
+                ) : null}
+              </div>
+            </details>
+          );
+        })}
         {chatLoading ? (
           <p className="text-sm text-ink-800">Assistant is responding...</p>
         ) : null}
