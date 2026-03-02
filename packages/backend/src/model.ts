@@ -34,8 +34,9 @@ export async function streamModel(
   provider: Provider,
   model: string,
   messages: ChatMessage[],
-  onDelta: (delta: string) => void,
+  onDelta: (delta: string) => Promise<void> | void,
   maxTokens?: number,
+  tools?: ModelToolDefinition[],
 ): Promise<ModelResponse> {
   if (isMockModel(model)) {
     return streamMockResponse(provider, model, messages, onDelta);
@@ -44,10 +45,10 @@ export async function streamModel(
   const apiKey = resolveApiKey(provider);
 
   if (provider === "openai") {
-    return streamOpenAI(model, messages, apiKey, onDelta, maxTokens);
+    return streamOpenAI(model, messages, apiKey, onDelta, maxTokens, tools);
   }
 
-  return streamAnthropic(model, messages, apiKey, onDelta, maxTokens);
+  return streamAnthropic(model, messages, apiKey, onDelta, maxTokens, tools);
 }
 
 export async function callModel(

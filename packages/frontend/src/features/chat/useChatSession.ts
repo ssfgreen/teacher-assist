@@ -72,23 +72,42 @@ export function useChatSession({
 
       let assistantContent = "";
       const streamedToolMessages: ChatMessage[] = [];
+      let streamedContextPaths: string[] = [];
+      let streamedMemoryContextPaths: string[] = [];
+      let previewTrace: ChatTrace | null = null;
       const streamBaseSession = {
         ...activeSession,
         provider,
         model,
       };
 
-      upsertCurrentSession({
-        ...streamBaseSession,
-        updatedAt: new Date().toISOString(),
-        messages: [
-          ...nextMessages,
-          {
-            role: "assistant",
-            content: "",
-          },
-        ],
-      });
+      const upsertStreamingSession = () => {
+        upsertCurrentSession({
+          ...streamBaseSession,
+          updatedAt: new Date().toISOString(),
+          contextHistory:
+            streamedContextPaths.length > 0
+              ? [streamedContextPaths, ...(activeSession.contextHistory ?? [])]
+              : (activeSession.contextHistory ?? []),
+          memoryContextHistory:
+            streamedMemoryContextPaths.length > 0
+              ? [
+                  streamedMemoryContextPaths,
+                  ...(activeSession.memoryContextHistory ?? []),
+                ]
+              : (activeSession.memoryContextHistory ?? []),
+          messages: [
+            ...nextMessages,
+            ...streamedToolMessages,
+            {
+              role: "assistant",
+              content: assistantContent,
+            },
+          ],
+        });
+      };
+
+      upsertStreamingSession();
 
       const response = await sendChatStream(
         {
@@ -101,33 +120,40 @@ export function useChatSession({
         {
           onDelta: (delta) => {
             assistantContent += delta;
-            upsertCurrentSession({
-              ...streamBaseSession,
-              updatedAt: new Date().toISOString(),
-              messages: [
-                ...nextMessages,
-                ...streamedToolMessages,
-                {
-                  role: "assistant",
-                  content: assistantContent,
-                },
-              ],
-            });
+            upsertStreamingSession();
           },
           onMessage: (message) => {
             streamedToolMessages.push(message);
-            upsertCurrentSession({
-              ...streamBaseSession,
-              updatedAt: new Date().toISOString(),
-              messages: [
-                ...nextMessages,
-                ...streamedToolMessages,
-                {
-                  role: "assistant",
-                  content: assistantContent,
-                },
-              ],
+            upsertStreamingSession();
+          },
+          onContext: (context) => {
+            streamedContextPaths = context.workspaceContextLoaded;
+            streamedMemoryContextPaths = context.memoryContextLoaded;
+
+            previewTrace = {
+              id: `preview-${activeSession.id}`,
+              createdAt: new Date().toISOString(),
+              systemPrompt: context.systemPrompt,
+              estimatedPromptTokens: context.estimatedPromptTokens,
+              usage: {
+                inputTokens: 0,
+                outputTokens: 0,
+                totalTokens: 0,
+                estimatedCostUsd: 0,
+              },
+              status: "success",
+              steps: [],
+            };
+
+            setTraceHistory((previous) => {
+              const withoutPreview = previous.filter(
+                (trace) => trace.id !== previewTrace?.id,
+              );
+              return [previewTrace as ChatTrace, ...withoutPreview];
             });
+            setLastContextPaths(streamedContextPaths);
+            setLastMemoryContextPaths(streamedMemoryContextPaths);
+            upsertStreamingSession();
           },
         },
         abortController.signal,
@@ -161,8 +187,12 @@ export function useChatSession({
       if (response.trace) {
         setTraceHistory((previous) => [
           response.trace as ChatTrace,
-          ...previous,
+          ...previous.filter((trace) => trace.id !== previewTrace?.id),
         ]);
+      } else if (previewTrace) {
+        setTraceHistory((previous) =>
+          previous.filter((trace) => trace.id !== previewTrace?.id),
+        );
       }
       if (response.status === "awaiting_memory_capture" && response.proposals) {
         setMemoryProposals(response.proposals);

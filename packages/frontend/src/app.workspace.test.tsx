@@ -17,6 +17,10 @@ beforeEach(() => {
   setupDefaultMocks();
 });
 
+async function openWorkspaceSection(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Workspace" }));
+}
+
 describe("App workspace", () => {
   it("opens workspace file and shows context indicator metadata", async () => {
     const user = userEvent.setup();
@@ -25,6 +29,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
 
     await waitFor(() => {
@@ -57,6 +62,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(
       screen.getByRole("button", { name: /More actions for classes$/i }),
     );
@@ -83,6 +89,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(
       screen.getByRole("button", { name: /More actions for curriculum$/i }),
     );
@@ -109,6 +116,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(screen.getByRole("button", { name: "CLASS.md" }));
     await user.click(
       screen.getByRole("button", { name: "Rename classes/3B/CLASS.md" }),
@@ -132,6 +140,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(
       screen.getByRole("button", { name: /More actions for classes$/i }),
     );
@@ -157,6 +166,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     vi.spyOn(window, "confirm").mockReturnValue(true);
     await user.click(
       screen.getByRole("button", {
@@ -179,6 +189,7 @@ describe("App workspace", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(
       screen.getByRole("button", { name: "Workspace settings" }),
     );

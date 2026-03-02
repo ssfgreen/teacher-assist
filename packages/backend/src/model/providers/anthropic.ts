@@ -95,8 +95,9 @@ export async function streamAnthropic(
   model: string,
   messages: ChatMessage[],
   apiKey: string,
-  onDelta: (delta: string) => void,
+  onDelta: (delta: string) => Promise<void> | void,
   maxTokens = 1024,
+  tools?: ModelToolDefinition[],
 ): Promise<ModelResponse> {
   const client = new Anthropic({ apiKey });
   const systemPrompt = extractSystemPrompt(messages);
@@ -111,11 +112,25 @@ export async function streamAnthropic(
         content: message.content,
       }),
     ),
+    tools: tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters,
+    })),
   })) as AsyncIterable<unknown>;
 
   let content = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  const toolCallsByIndex = new Map<
+    number,
+    {
+      id?: string;
+      name?: string;
+      input?: Record<string, unknown>;
+      partial: string;
+    }
+  >();
 
   for await (const event of stream) {
     if (typeof event !== "object" || event === null) {
@@ -156,13 +171,54 @@ export async function streamAnthropic(
         typeof deltaPayload?.text === "string" ? deltaPayload.text : "";
 
       if (deltaType !== "text_delta") {
+        if (deltaType === "input_json_delta") {
+          const index =
+            typeof record.index === "number" ? record.index : Number.NaN;
+          const partial =
+            typeof deltaPayload?.partial_json === "string"
+              ? deltaPayload.partial_json
+              : "";
+          if (!Number.isNaN(index) && partial) {
+            const existing = toolCallsByIndex.get(index) ?? { partial: "" };
+            existing.partial += partial;
+            toolCallsByIndex.set(index, existing);
+          }
+        }
         continue;
       }
 
       if (deltaText) {
         content += deltaText;
-        onDelta(deltaText);
+        await onDelta(deltaText);
       }
+      continue;
+    }
+
+    if (eventType === "content_block_start") {
+      const index =
+        typeof record.index === "number" ? record.index : Number.NaN;
+      const block =
+        typeof record.content_block === "object" &&
+        record.content_block !== null
+          ? (record.content_block as Record<string, unknown>)
+          : null;
+      if (
+        Number.isNaN(index) ||
+        !block ||
+        block.type !== "tool_use" ||
+        typeof block.id !== "string" ||
+        typeof block.name !== "string"
+      ) {
+        continue;
+      }
+
+      const existing = toolCallsByIndex.get(index) ?? { partial: "" };
+      existing.id = block.id;
+      existing.name = block.name;
+      if (typeof block.input === "object" && block.input !== null) {
+        existing.input = block.input as Record<string, unknown>;
+      }
+      toolCallsByIndex.set(index, existing);
       continue;
     }
 
@@ -182,16 +238,43 @@ export async function streamAnthropic(
   const resolvedInput = inputTokens || usageFromEstimate.inputTokens;
   const resolvedOutput = outputTokens || usageFromEstimate.outputTokens;
   const resolvedTotal = resolvedInput + resolvedOutput;
+  const toolCalls: ToolCall[] = [];
+
+  for (const [index, call] of [...toolCallsByIndex.entries()].sort(
+    ([a], [b]) => a - b,
+  )) {
+    if (!call.id || !call.name) {
+      continue;
+    }
+
+    let input = call.input ?? {};
+    if ((!input || Object.keys(input).length === 0) && call.partial.trim()) {
+      try {
+        const parsed = JSON.parse(call.partial) as unknown;
+        if (typeof parsed === "object" && parsed !== null) {
+          input = parsed as Record<string, unknown>;
+        }
+      } catch {
+        input = {};
+      }
+    }
+
+    toolCalls.push({
+      id: call.id,
+      name: call.name,
+      input,
+    });
+  }
 
   return {
     content,
-    toolCalls: [],
+    toolCalls,
     usage: {
       inputTokens: resolvedInput,
       outputTokens: resolvedOutput,
       totalTokens: resolvedTotal,
       estimatedCostUsd: Number((resolvedTotal * 0.000002).toFixed(6)),
     },
-    stopReason: "stop",
+    stopReason: toolCalls.length > 0 ? "tool_use" : "stop",
   };
 }

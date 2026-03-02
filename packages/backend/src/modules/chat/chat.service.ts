@@ -216,6 +216,14 @@ export class ChatService {
       response.setHeader("connection", "keep-alive");
       response.flushHeaders();
       response.write(sseEvent("start", { ok: true }));
+      response.write(
+        sseEvent("context", {
+          workspaceContextLoaded: workspaceContext.loadedPaths,
+          memoryContextLoaded: memoryContext.loadedPaths,
+          systemPrompt,
+          estimatedPromptTokens: estimatedTokens,
+        }),
+      );
 
       let closed = false;
       request.on("close", () => {

@@ -43,6 +43,12 @@ export async function sendChatStream(
   callbacks: {
     onDelta: (delta: string) => void;
     onMessage?: (message: ChatMessage) => void;
+    onContext?: (context: {
+      workspaceContextLoaded: string[];
+      memoryContextLoaded: string[];
+      systemPrompt: string;
+      estimatedPromptTokens: number;
+    }) => void;
   },
   signal?: AbortSignal,
 ): Promise<ChatApiResponse> {
@@ -94,6 +100,12 @@ export async function sendChatStream(
       const data = JSON.parse(dataLine.slice("data:".length).trim()) as
         | { text: string }
         | { message: ChatMessage }
+        | {
+            workspaceContextLoaded: string[];
+            memoryContextLoaded: string[];
+            systemPrompt: string;
+            estimatedPromptTokens: number;
+          }
         | { error: string }
         | ChatApiResponse;
 
@@ -103,6 +115,24 @@ export async function sendChatStream(
 
       if (eventType === "message" && "message" in data) {
         callbacks.onMessage?.(data.message);
+      }
+
+      if (
+        eventType === "context" &&
+        "systemPrompt" in data &&
+        "workspaceContextLoaded" in data &&
+        "memoryContextLoaded" in data
+      ) {
+        callbacks.onContext?.({
+          workspaceContextLoaded: data.workspaceContextLoaded,
+          memoryContextLoaded: data.memoryContextLoaded,
+          systemPrompt: data.systemPrompt,
+          estimatedPromptTokens:
+            "estimatedPromptTokens" in data &&
+            typeof data.estimatedPromptTokens === "number"
+              ? data.estimatedPromptTokens
+              : 0,
+        });
       }
 
       if (eventType === "error" && "error" in data) {

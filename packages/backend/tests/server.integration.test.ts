@@ -320,6 +320,7 @@ describe("server integration", () => {
     );
 
     const payload = await streamResponse.text();
+    expect(payload.includes("event: context")).toBe(true);
     expect(payload.includes("event: delta")).toBe(true);
     expect(payload.includes("event: done")).toBe(true);
   });

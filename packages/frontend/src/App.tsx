@@ -25,14 +25,25 @@ import { useAuthStore } from "./stores/authStore";
 import { useMemoryStore } from "./stores/memoryStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useWorkspaceStore } from "./stores/workspaceStore";
-import type { SessionRecord, SkillManifestItem, WorkspaceNode } from "./types";
+import type {
+  ChatMessage,
+  SessionRecord,
+  SkillManifestItem,
+  WorkspaceNode,
+} from "./types";
 
 const WorkspaceEditor = lazy(
   () => import("./components/workspace/WorkspaceEditor"),
 );
 
 type SidebarSection = "workspace" | "sessions" | "skills" | "memory";
-type InspectorSource = "skill" | "workspace" | "memory" | "prompt" | "response";
+type InspectorSource =
+  | "skill"
+  | "workspace"
+  | "memory"
+  | "prompt"
+  | "response"
+  | "tool";
 type InspectorRenderMode = "markdown" | "pre";
 
 interface InspectorState {
@@ -226,10 +237,10 @@ export default function App() {
   const [sidebarSections, setSidebarSections] = useState<
     Record<SidebarSection, boolean>
   >({
-    workspace: true,
+    workspace: false,
     sessions: true,
-    skills: true,
-    memory: true,
+    skills: false,
+    memory: false,
   });
   const [selectedClassRef, setSelectedClassRef] = useState("");
   const [skills, setSkills] = useState<SkillManifestItem[]>([]);
@@ -568,6 +579,67 @@ export default function App() {
     }
   };
 
+  const inspectReadFileTool = async (message: ChatMessage) => {
+    const path =
+      typeof message.toolInput?.path === "string" ? message.toolInput.path : "";
+    const title = path ? `read_file: ${path}` : "read_file";
+
+    setInspector({
+      source: "tool",
+      title,
+      content: "",
+      loading: true,
+      error: null,
+      renderMode: "markdown",
+    });
+
+    const fallbackContent = message.content || "(empty)";
+
+    try {
+      let fileContent = fallbackContent;
+
+      if (path) {
+        const virtualContent = virtualWorkspaceContextContent({
+          path,
+          selectedClassRef,
+          classRefs,
+          workspaceTree,
+        });
+        if (virtualContent !== null) {
+          fileContent = virtualContent;
+        } else if (path === "MEMORY.md" || path.endsWith("/MEMORY.md")) {
+          fileContent = (await readMemoryFileApi(path)).content;
+        } else {
+          fileContent = (await readWorkspaceFileApi(path)).content;
+        }
+      }
+
+      setInspector((current) =>
+        current && current.source === "tool" && current.title === title
+          ? {
+              ...current,
+              content: fileContent,
+              loading: false,
+              error: null,
+            }
+          : current,
+      );
+    } catch (error) {
+      const messageText =
+        error instanceof Error ? error.message : "Failed to inspect read_file";
+      setInspector((current) =>
+        current && current.source === "tool" && current.title === title
+          ? {
+              ...current,
+              content: `_Failed to load file from workspace (${messageText}); showing tool output instead._\n\n${fallbackContent}`,
+              loading: false,
+              error: null,
+            }
+          : current,
+      );
+    }
+  };
+
   const inspectPrompt = (prompt: string, label: string) => {
     setInspector({
       source: "prompt",
@@ -602,7 +674,7 @@ export default function App() {
       sidebarOpen={sidebarOpen}
       onToggleSidebar={() => setSidebarOpen((current) => !current)}
       sidebar={
-        <div className="flex h-full min-h-0 flex-col px-3 py-3">
+        <div className="flex h-full min-h-0 flex-col overflow-y-auto px-3 py-3">
           <div className="mb-3">
             <h1 className="font-display text-xl">Teacher Assist</h1>
             <p className="text-sm text-ink-700">{teacher.name}</p>
@@ -980,6 +1052,7 @@ export default function App() {
               onInspectSkill={inspectSkill}
               onInspectWorkspacePath={inspectWorkspacePath}
               onInspectMemoryPath={inspectMemoryPath}
+              onInspectReadFileTool={inspectReadFileTool}
               onInspectPrompt={inspectPrompt}
               onInspectRawResponse={inspectRawResponse}
               sendMessage={sendMessage}

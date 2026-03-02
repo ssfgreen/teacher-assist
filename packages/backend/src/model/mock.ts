@@ -135,15 +135,15 @@ export function mockResponse(
   );
 }
 
-export function streamMockResponse(
+export async function streamMockResponse(
   provider: Provider,
   model: string,
   messages: ChatMessage[],
-  onDelta: (delta: string) => void,
-): ModelResponse {
+  onDelta: (delta: string) => Promise<void> | void,
+): Promise<ModelResponse> {
   const content = `[mock:${provider}/${model}] ${latestUserMessage(messages)}`;
   for (const chunk of chunkText(content)) {
-    onDelta(chunk);
+    await onDelta(chunk);
   }
   return normalize(content, messages);
 }

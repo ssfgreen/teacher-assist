@@ -41,6 +41,91 @@ describe("App auth and chat", () => {
     expect(helloMatches.length).toBeGreaterThan(0);
   });
 
+  it("renders context and tool steps before stream completion", async () => {
+    let resolveStream!: (value: ChatApiResponse) => void;
+    const streamDone = new Promise<ChatApiResponse>((resolve) => {
+      resolveStream = resolve;
+    });
+
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onContext?.({
+          workspaceContextLoaded: ["soul.md", "classes/index.md"],
+          memoryContextLoaded: ["MEMORY.md"],
+          systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+          estimatedPromptTokens: 12,
+        });
+        callbacks.onMessage?.({
+          role: "tool",
+          content: "ok",
+          toolName: "read_skill",
+          toolInput: { target: "backward-design" },
+        });
+        callbacks.onDelta("Hello ");
+        return streamDone;
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = await screen.findByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    await screen.findByText(/prompt embellished: context added/i);
+    await screen.findByText(/read skill: backward-design/i);
+    await screen.findByLabelText(/streaming cursor/i);
+
+    resolveStream({
+      sessionId: "s1",
+      messages: [
+        { role: "user", content: "Plan loops" },
+        {
+          role: "tool",
+          content: "ok",
+          toolName: "read_skill",
+          toolInput: { target: "backward-design" },
+        },
+        { role: "assistant", content: "Hello world" },
+      ],
+      skillsLoaded: ["backward-design"],
+      status: "success",
+      trace: {
+        id: "trace-stream-order",
+        createdAt: "2026-03-02T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md", "classes/index.md"],
+      memoryContextLoaded: ["MEMORY.md"],
+      response: {
+        content: "Hello world",
+        toolCalls: [],
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    await screen.findByText("Hello world");
+  });
+
   it("uses selected provider and model for chat requests", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -183,7 +268,7 @@ describe("App auth and chat", () => {
     await user.type(input, "Plan lesson{enter}");
 
     await screen.findByText(/read skill: backward-design/i);
-
+    await user.click(screen.getByRole("button", { name: "Skills" }));
     await screen.findByText("Active");
   });
 
@@ -195,6 +280,7 @@ describe("App auth and chat", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
 
+    await user.click(screen.getByRole("button", { name: "Skills" }));
     await user.click(screen.getByText("backward-design"));
 
     await waitFor(() => {
@@ -210,13 +296,13 @@ describe("App auth and chat", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
-    await screen.findByRole("button", { name: /^soul\.md$/i });
-
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
     expect(screen.queryByRole("button", { name: /^soul\.md$/i })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Workspace" }));
     await screen.findByRole("button", { name: /^soul\.md$/i });
+
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+    expect(screen.queryByRole("button", { name: /^soul\.md$/i })).toBeNull();
   });
 
   it("groups consecutive skill reads under reading skills", async () => {
@@ -427,7 +513,12 @@ describe("App auth and chat", () => {
     const grouped = await screen.findByText(/exploring files/i);
     await user.click(grouped);
     await user.click(await screen.findByText(/read file: teacher\.md/i));
-    await screen.findByRole("heading", { name: "Teacher Profile" });
+    await screen.findByRole("heading", { name: /teacher profile/i });
+    await screen.findByText(/details/i);
+    expect(screen.queryByText(/tool invoked/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/\"path\": \"teacher\.md\"/i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows generated prompt and trace steps", async () => {

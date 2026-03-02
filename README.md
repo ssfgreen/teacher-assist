@@ -110,7 +110,7 @@ cd packages/frontend
 bun run dev
 ```
 
-## Sprint 2 Test Commands
+## Verification Commands
 
 Run these from repository root unless noted.
 
@@ -188,7 +188,7 @@ Optional env overrides:
 Logs are written to:
 - `packages/backend/.data/smoke/providers-<timestamp>.json`
 
-## Sprint 2 Verification Checklist
+## Verification Checklist
 
 - `bun install` completes without dependency errors
 - `bun run lint` exits with code `0`

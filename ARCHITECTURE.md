@@ -7,7 +7,7 @@
 - `packages/backend`: Auth, chat, sessions, workspace/memory APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session/sidebar panels, workspace + memory editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 + Sprint 1 + Sprint 2 + Sprint 3 (skills + agentic tool loop + transparent tool/skill UI).
+The current implementation is Sprint 0 through Sprint 5 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, and Sprint 5 memory + session-search flows).
 
 ## Backend Runtime
 

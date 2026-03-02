@@ -1,4 +1,4 @@
-import { callModel } from "./model";
+import { callModel, streamModel } from "./model";
 import {
   type ToolContext,
   dispatchToolCall,
@@ -201,31 +201,40 @@ export async function runAgentLoopStreaming(
       };
     }
 
-    const response = await callModel(
+    let running = "";
+    const response = await streamModel(
       params.provider,
       params.model,
       messages,
+      async (delta) => {
+        running += delta;
+        await params.onEvent({
+          message: { role: "assistant", content: running },
+          isFinalAssistant: false,
+        });
+      },
       params.maxTokens,
       tools,
     );
     usage = addUsage(usage, response.usage);
 
     if (response.content.trim()) {
-      let running = "";
-      for (const chunk of chunkAssistantText(response.content)) {
-        if (stopped()) {
-          return {
-            status: "success",
-            messages: messages.filter((message) => message.role !== "system"),
-            usage,
-            skillsLoaded: [...skillsLoaded],
-          };
+      if (!running) {
+        for (const chunk of chunkAssistantText(response.content)) {
+          if (stopped()) {
+            return {
+              status: "success",
+              messages: messages.filter((message) => message.role !== "system"),
+              usage,
+              skillsLoaded: [...skillsLoaded],
+            };
+          }
+          running += chunk;
+          await params.onEvent({
+            message: { role: "assistant", content: running },
+            isFinalAssistant: false,
+          });
         }
-        running += chunk;
-        await params.onEvent({
-          message: { role: "assistant", content: running },
-          isFinalAssistant: response.toolCalls.length === 0,
-        });
       }
       messages.push({ role: "assistant", content: response.content });
     }

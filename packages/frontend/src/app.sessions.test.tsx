@@ -17,6 +17,14 @@ beforeEach(() => {
   setupDefaultMocks();
 });
 
+async function openWorkspaceSection(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Workspace" }));
+}
+
+async function openSkillsSection(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Skills" }));
+}
+
 describe("App sessions", () => {
   it("resumes a session when selected", async () => {
     const now = new Date().toISOString();
@@ -104,6 +112,7 @@ describe("App sessions", () => {
       "border-accent-500",
     );
 
+    await openWorkspaceSection(user);
     await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
     await screen.findByText("Editing soul.md");
 
@@ -146,6 +155,7 @@ describe("App sessions", () => {
     render(<App />);
 
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
     await screen.findByText("Editing soul.md");
 
@@ -220,6 +230,7 @@ describe("App sessions", () => {
     await screen.findByText(/prompt embellished: context added/i);
     await screen.findByText("Assistant response");
 
+    await openSkillsSection(user);
     await screen.findByText("Active");
   });
 
@@ -230,6 +241,7 @@ describe("App sessions", () => {
     await screen.findByRole("button", { name: "Sign in" });
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await screen.findByText("Demo Teacher");
+    await openWorkspaceSection(user);
     await user.click(screen.getByRole("button", { name: /^soul\.md$/i }));
     await screen.findByText("Editing soul.md");
 

@@ -1,8 +1,10 @@
 import {
   BarChart3,
   ChevronDown,
+  Eye,
   Loader2,
   Plus,
+  Search,
   Send,
   Square,
 } from "lucide-react";
@@ -55,6 +57,7 @@ interface ChatPaneProps {
   onInspectSkill: (skillName: string) => void;
   onInspectWorkspacePath: (path: string) => void;
   onInspectMemoryPath: (path: string) => void;
+  onInspectReadFileTool: (message: ChatMessage) => void;
   onInspectPrompt: (prompt: string, label: string) => void;
   onInspectRawResponse: (content: string, label: string) => void;
   sendMessage: () => Promise<void>;
@@ -318,10 +321,6 @@ function readFilePath(message: ChatMessage): string | null {
   return typeof path === "string" ? path : null;
 }
 
-function isMemoryPath(path: string): boolean {
-  return path === "MEMORY.md" || path.endsWith("/MEMORY.md");
-}
-
 function summaryText(entry: TimelineEntry, pending: boolean): string {
   if (pending) {
     return "Thinking...";
@@ -375,6 +374,27 @@ function tokensTitle(trace?: ChatTrace): string {
   return `Prompt: ${trace.usage.inputTokens}, Response: ${trace.usage.outputTokens}, Total: ${trace.usage.totalTokens}`;
 }
 
+function TokenUsageIcon({
+  trace,
+  compact = false,
+}: { trace: ChatTrace; compact?: boolean }) {
+  const tooltip = tokensTitle(trace);
+  const iconSizeClass = compact ? "h-3 w-3" : "h-4 w-4";
+
+  return (
+    <span
+      className="group relative inline-flex items-center"
+      aria-label={tooltip}
+      title={tooltip}
+    >
+      <BarChart3 className={`${iconSizeClass} text-ink-700`} />
+      <span className="pointer-events-none absolute -top-8 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded border border-paper-300 bg-surface-panel px-2 py-1 text-[11px] text-ink-900 shadow group-hover:block">
+        {tooltip}
+      </span>
+    </span>
+  );
+}
+
 function promptLabel(trace: ChatTrace): string {
   const timestamp = new Date(trace.createdAt).toLocaleString();
   return `System prompt (${timestamp})`;
@@ -410,6 +430,7 @@ export default function ChatPane({
   onInspectSkill,
   onInspectWorkspacePath,
   onInspectMemoryPath,
+  onInspectReadFileTool,
   onInspectPrompt,
   onInspectRawResponse,
   sendMessage,
@@ -443,17 +464,8 @@ export default function ChatPane({
   const freshSlate = entries.length === 0 && !chatLoading;
   const composerExpanded =
     isComposerFocused || Boolean(messageInput.trim()) || chatLoading;
-  const latestEntryId = entries.at(-1)?.id ?? "";
-  const inspectFilePath = useCallback(
-    (path: string) => {
-      if (isMemoryPath(path)) {
-        onInspectMemoryPath(path);
-        return;
-      }
-      onInspectWorkspacePath(path);
-    },
-    [onInspectMemoryPath, onInspectWorkspacePath],
-  );
+  const latestEntryId =
+    entries.length > 0 ? (entries[entries.length - 1]?.id ?? "") : "";
 
   useEffect(() => {
     const token = focusComposerToken;
@@ -530,55 +542,59 @@ export default function ChatPane({
                   key={entry.id}
                   className={`mr-auto max-w-[90%] rounded-2xl border px-3 py-2 text-sm ${entryContainerClasses(entry.kind)}`}
                 >
-                  <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="mb-2 flex items-center gap-2">
                     <p className="text-sm font-medium text-ink-900">
                       {summaryText(entry, isPendingFinalResponse)}
                     </p>
-                    {isPendingFinalResponse ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-ink-700" />
-                    ) : null}
-                    {entry.trace ? (
-                      <span
-                        aria-label={tokensTitle(entry.trace)}
-                        title={tokensTitle(entry.trace)}
-                      >
-                        <BarChart3 className="h-4 w-4 text-ink-700" />
-                      </span>
-                    ) : null}
-                    {entry.trace ? (
+                    <div className="ml-auto flex items-center gap-2">
+                      {isPendingFinalResponse ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-ink-700" />
+                      ) : null}
+                      {entry.trace ? (
+                        <TokenUsageIcon trace={entry.trace} />
+                      ) : null}
+                      {entry.trace ? (
+                        <button
+                          className="rounded border border-paper-300 px-2 py-0.5 text-[11px] text-ink-700 hover:border-accent-500"
+                          type="button"
+                          aria-label="View full prompt"
+                          title="View full prompt"
+                          onClick={() => {
+                            const trace = entry.trace;
+                            if (!trace) {
+                              return;
+                            }
+                            onInspectPrompt(
+                              trace.systemPrompt,
+                              promptLabel(trace),
+                            );
+                          }}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
                       <button
                         className="rounded border border-paper-300 px-2 py-0.5 text-[11px] text-ink-700 hover:border-accent-500"
                         type="button"
+                        aria-label="View raw response"
+                        title="View raw response"
                         onClick={() =>
-                          onInspectPrompt(
-                            entry.trace?.systemPrompt ?? "",
-                            promptLabel(entry.trace),
+                          onInspectRawResponse(
+                            entry.message?.content ?? "",
+                            responseLabel(entry.trace),
                           )
                         }
                       >
-                        View full prompt
+                        <Search className="h-3.5 w-3.5" />
                       </button>
-                    ) : null}
-                    <button
-                      className="rounded border border-paper-300 px-2 py-0.5 text-[11px] text-ink-700 hover:border-accent-500"
-                      type="button"
-                      onClick={() =>
-                        onInspectRawResponse(
-                          entry.message?.content ?? "",
-                          responseLabel(entry.trace),
-                        )
-                      }
-                    >
-                      View raw response
-                    </button>
+                    </div>
                   </div>
                   {entry.message?.role === "assistant" ||
                   entry.message?.role === "system" ? (
                     <AssistantMessage
-                      content={
+                      content={entry.message.content}
+                      streaming={
                         chatLoading && entryIndex === entries.length - 1
-                          ? `${entry.message.content}▋`
-                          : entry.message.content
                       }
                     />
                   ) : null}
@@ -597,6 +613,30 @@ export default function ChatPane({
                 entry,
                 isPendingFinalResponse,
               ).toLowerCase();
+
+              if (
+                entry.kind === "tool-step" &&
+                entry.message?.role === "tool" &&
+                readFilePath(entry.message)
+              ) {
+                const toolMessage = entry.message;
+                return (
+                  <button
+                    key={entry.id}
+                    className="mr-auto flex max-w-[90%] items-center gap-1 text-left text-xs text-ink-700"
+                    type="button"
+                    onClick={() => onInspectReadFileTool(toolMessage)}
+                  >
+                    <span className="min-w-0 truncate underline decoration-dotted underline-offset-2 hover:text-accent-700">
+                      {plainSummary}
+                    </span>
+                    {entry.trace ? (
+                      <TokenUsageIcon trace={entry.trace} compact />
+                    ) : null}
+                  </button>
+                );
+              }
+
               return (
                 <details
                   key={entry.id}
@@ -605,12 +645,7 @@ export default function ChatPane({
                   <summary className="flex cursor-pointer list-none items-center gap-1">
                     <span className="min-w-0 truncate">{plainSummary}</span>
                     {entry.trace ? (
-                      <span
-                        aria-label={tokensTitle(entry.trace)}
-                        title={tokensTitle(entry.trace)}
-                      >
-                        <BarChart3 className="h-3 w-3 text-ink-700/70" />
-                      </span>
+                      <TokenUsageIcon trace={entry.trace} compact />
                     ) : null}
                     {isPendingFinalResponse ? (
                       <Loader2 className="h-3 w-3 animate-spin text-ink-700/70" />
@@ -625,14 +660,20 @@ export default function ChatPane({
                           <button
                             className="rounded border border-paper-300 px-2 py-0.5 text-[11px] hover:border-accent-500"
                             type="button"
-                            onClick={() =>
+                            aria-label="View full prompt"
+                            title="View full prompt"
+                            onClick={() => {
+                              const trace = entry.trace;
+                              if (!trace) {
+                                return;
+                              }
                               onInspectPrompt(
-                                entry.trace?.systemPrompt ?? "",
-                                promptLabel(entry.trace),
-                              )
-                            }
+                                trace.systemPrompt,
+                                promptLabel(trace),
+                              );
+                            }}
                           >
-                            View full prompt
+                            <Eye className="h-3.5 w-3.5" />
                           </button>
                         ) : null}
                         <div>
@@ -697,9 +738,7 @@ export default function ChatPane({
                               <button
                                 className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
                                 type="button"
-                                onClick={() =>
-                                  inspectFilePath(readFilePath(message) ?? "")
-                                }
+                                onClick={() => onInspectReadFileTool(message)}
                               >
                                 {toolPreview(message).toLowerCase()}
                               </button>
@@ -713,60 +752,67 @@ export default function ChatPane({
 
                     {(entry.kind === "skill-read" ||
                       entry.kind === "tool-step") &&
-                    entry.message?.role === "tool" ? (
-                      <div className="space-y-2 text-xs">
-                        <div>
-                          <p className="font-semibold">Tool</p>
-                          {entry.message.toolName === "read_skill" &&
-                          skillTarget(entry.message) ? (
-                            <button
-                              className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
-                              type="button"
-                              onClick={() =>
-                                onInspectSkill(skillTarget(entry.message) ?? "")
-                              }
-                            >
-                              {entry.message.toolName}
-                            </button>
-                          ) : readFilePath(entry.message) ? (
-                            <button
-                              className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
-                              type="button"
-                              onClick={() =>
-                                inspectFilePath(
-                                  readFilePath(entry.message) ?? "",
-                                )
-                              }
-                            >
-                              {entry.message.toolName}
-                            </button>
-                          ) : (
-                            <p>{entry.message.toolName ?? "tool"}</p>
-                          )}
-                          {entry.message.toolError ? (
-                            <p className="text-danger-700">Execution error</p>
-                          ) : null}
-                        </div>
-                        <div>
-                          <p className="font-semibold">Arguments</p>
-                          <pre className="overflow-auto whitespace-pre-wrap rounded border border-paper-300 bg-surface-panel p-2">
-                            {JSON.stringify(
-                              entry.message.toolInput ?? {},
-                              null,
-                              2,
-                            )}
-                          </pre>
-                        </div>
-                        {readFilePath(entry.message) ? null : (
-                          <div>
-                            <p className="font-semibold">Result</p>
-                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-paper-300 bg-surface-panel p-2">
-                              {entry.message.content}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
+                    entry.message?.role === "tool"
+                      ? (() => {
+                          const toolMessage = entry.message;
+                          return (
+                            <div className="space-y-2 text-xs">
+                              <div>
+                                <p className="font-semibold">Tool</p>
+                                {toolMessage.toolName === "read_skill" &&
+                                skillTarget(toolMessage) ? (
+                                  <button
+                                    className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                                    type="button"
+                                    onClick={() =>
+                                      onInspectSkill(
+                                        skillTarget(toolMessage) ?? "",
+                                      )
+                                    }
+                                  >
+                                    {toolMessage.toolName}
+                                  </button>
+                                ) : readFilePath(toolMessage) ? (
+                                  <button
+                                    className="underline decoration-dotted underline-offset-2 hover:text-accent-700"
+                                    type="button"
+                                    onClick={() =>
+                                      onInspectReadFileTool(toolMessage)
+                                    }
+                                  >
+                                    {toolMessage.toolName}
+                                  </button>
+                                ) : (
+                                  <p>{toolMessage.toolName ?? "tool"}</p>
+                                )}
+                                {toolMessage.toolError ? (
+                                  <p className="text-danger-700">
+                                    Execution error
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div>
+                                <p className="font-semibold">Arguments</p>
+                                <pre className="overflow-auto whitespace-pre-wrap rounded border border-paper-300 bg-surface-panel p-2">
+                                  {JSON.stringify(
+                                    toolMessage.toolInput ?? {},
+                                    null,
+                                    2,
+                                  )}
+                                </pre>
+                              </div>
+                              {readFilePath(toolMessage) ? null : (
+                                <div>
+                                  <p className="font-semibold">Result</p>
+                                  <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-paper-300 bg-surface-panel p-2">
+                                    {toolMessage.content}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()
+                      : null}
                   </div>
                 </details>
               );
