@@ -349,6 +349,29 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "ask_user_question",
+    description:
+      "Ask the teacher a clarifying question and wait for an explicit response before continuing.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string" },
+        options: {
+          type: "array",
+          items: { type: "string" },
+        },
+        allow_free_text: { type: "boolean" },
+      },
+      required: ["question", "allow_free_text"],
+      additionalProperties: false,
+    },
+    handler: async () => {
+      throw new Error(
+        "ask_user_question is handled by the agent loop and should not execute directly",
+      );
+    },
+  },
+  {
     name: "update_tasks",
     description:
       "Manage a session task list. Operations: add(text), update(id,text), complete(id).",

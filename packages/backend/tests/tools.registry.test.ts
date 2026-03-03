@@ -25,6 +25,21 @@ describe("tool registry", () => {
           "read_skill",
     );
     expect(Boolean(readSkill)).toBe(true);
+
+    const askUserQuestion = openAiTools.find(
+      (tool) =>
+        typeof tool === "object" &&
+        tool !== null &&
+        (tool as { function?: { name?: string } }).function?.name ===
+          "ask_user_question",
+    ) as { function?: { parameters?: { required?: string[] } } } | undefined;
+
+    expect(Boolean(askUserQuestion)).toBe(true);
+    expect(
+      askUserQuestion?.function?.parameters?.required?.includes(
+        "allow_free_text",
+      ),
+    ).toBe(true);
   });
 
   it("returns tool-not-found errors without throwing", async () => {

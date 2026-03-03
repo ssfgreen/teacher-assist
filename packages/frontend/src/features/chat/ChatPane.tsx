@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { ChatMessage, ChatTrace, Provider } from "../../types";
+import type {
+  ChatMessage,
+  ChatTrace,
+  CommandSummary,
+  Provider,
+} from "../../types";
 import { displayContextPath } from "../workspace/path-utils";
 import { AssistantMessage } from "./AssistantMessage";
 import { MODEL_OPTIONS } from "./model-options";
@@ -39,6 +44,9 @@ interface ChatPaneProps {
   classRefs: string[];
   selectedClassRef: string;
   setSelectedClassRef: (value: string) => void;
+  commands: CommandSummary[];
+  selectedCommandId: string;
+  setSelectedCommandId: (value: string) => void;
   contextHistory: string[][];
   memoryContextHistory: string[][];
   traceHistory: ChatTrace[];
@@ -62,6 +70,7 @@ interface ChatPaneProps {
   onInspectRawResponse: (content: string, label: string) => void;
   sendMessage: () => Promise<void>;
   cancelMessage: () => void;
+  interactiveLocked?: boolean;
 }
 
 function toolMessageSignature(message: ChatMessage): string {
@@ -470,6 +479,9 @@ export default function ChatPane({
   classRefs,
   selectedClassRef,
   setSelectedClassRef,
+  commands,
+  selectedCommandId,
+  setSelectedCommandId,
   contextHistory,
   memoryContextHistory,
   traceHistory,
@@ -493,6 +505,7 @@ export default function ChatPane({
   onInspectRawResponse,
   sendMessage,
   cancelMessage,
+  interactiveLocked = false,
 }: ChatPaneProps) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -942,7 +955,7 @@ export default function ChatPane({
             }}
             onFocus={() => setIsComposerFocused(true)}
             onBlur={() => setIsComposerFocused(false)}
-            disabled={chatLoading || sessionLoading}
+            disabled={chatLoading || sessionLoading || interactiveLocked}
             style={{ gridArea: "primary" }}
           />
 
@@ -955,7 +968,9 @@ export default function ChatPane({
               type="submit"
               aria-label={chatLoading ? "Stop generation" : "Send message"}
               disabled={
-                sessionLoading || (!chatLoading && !messageInput.trim())
+                sessionLoading ||
+                interactiveLocked ||
+                (!chatLoading && !messageInput.trim())
               }
             >
               {chatLoading ? (
@@ -1015,6 +1030,23 @@ export default function ChatPane({
                 {classRefs.map((ref) => (
                   <option key={ref} value={ref}>
                     {ref}
+                  </option>
+                ))}
+              </select>
+
+              <label className="sr-only" htmlFor="command">
+                Command
+              </label>
+              <select
+                id="command"
+                className="rounded-full border border-paper-300 bg-surface-panel px-3 py-1 text-xs"
+                value={selectedCommandId}
+                onChange={(event) => setSelectedCommandId(event.target.value)}
+              >
+                <option value="">No command</option>
+                {commands.map((command) => (
+                  <option key={command.id} value={command.id}>
+                    {command.label}
                   </option>
                 ))}
               </select>

@@ -60,14 +60,49 @@ export interface WorkspaceFileResponse {
 
 export interface ChatApiResponse {
   response: ModelResponse;
-  status?: "success" | "awaiting_memory_capture" | "no_new_memory";
+  status?:
+    | "success"
+    | "awaiting_memory_capture"
+    | "no_new_memory"
+    | "awaiting_feedforward"
+    | "awaiting_reflection"
+    | "awaiting_adjudication"
+    | "awaiting_user_question";
   proposals?: MemoryProposal[];
+  feedforward?: {
+    summary: string;
+  };
+  reflection?: {
+    prompt: string;
+  };
+  adjudication?: {
+    sections: Array<{
+      id: string;
+      title: string;
+      preview: string;
+    }>;
+  };
+  question?: {
+    question: string;
+    options?: string[];
+    allow_free_text: boolean;
+  };
   sessionId: string;
   messages: ChatMessage[];
   skillsLoaded?: string[];
   workspaceContextLoaded?: string[];
   memoryContextLoaded?: string[];
   trace?: ChatTrace;
+}
+
+export interface CommandSummary {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface CommandsApiResponse {
+  commands: CommandSummary[];
 }
 
 export interface MemoryProposal {

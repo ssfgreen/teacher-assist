@@ -5,6 +5,7 @@ export async function sendChat(params: {
   messages: ChatMessage[];
   provider: Provider;
   model: string;
+  command?: string;
   sessionId?: string;
   classRef?: string;
 }): Promise<ChatApiResponse> {
@@ -33,11 +34,44 @@ export async function sendMemoryResponse(params: {
   );
 }
 
+export async function sendFeedforwardResponse(params: {
+  sessionId: string;
+  action: "confirm" | "edit" | "dismiss";
+  note?: string;
+}): Promise<ChatApiResponse> {
+  return apiFetch<ChatApiResponse>("/api/chat/feedforward-response", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function sendAdjudicationResponse(params: {
+  sessionId: string;
+  action: "acknowledge" | "skip" | "accept" | "revise" | "alternatives";
+  note?: string;
+}): Promise<ChatApiResponse> {
+  return apiFetch<ChatApiResponse>("/api/chat/adjudication-response", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function sendQuestionResponse(params: {
+  sessionId: string;
+  answer: string;
+}): Promise<ChatApiResponse> {
+  return apiFetch<ChatApiResponse>("/api/chat/question-response", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 export async function sendChatStream(
   params: {
     messages: ChatMessage[];
     provider: Provider;
     model: string;
+    command?: string;
     sessionId?: string;
     classRef?: string;
   },

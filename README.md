@@ -13,12 +13,15 @@ It combines persistent workspace context, session memory, and an agentic chat lo
 - Streaming chat with tool-use transparency and inspectable traces in session metadata
 - Workspace-first UX with editable markdown files (`soul.md`, teacher/class/curriculum context)
 - Memory capture flow with teacher confirmation (`awaiting_memory_capture` / `no_new_memory`)
+- Interactive hook flow for command runs (`awaiting_feedforward`, `awaiting_reflection`, `awaiting_adjudication`, `awaiting_user_question`)
 
 ## Core Functionality
 
 - Authentication and teacher-scoped data isolation
 - Session-based chat with provider/model selection and streaming responses
+- Command-driven entry points (discoverable command selector in composer + backend command registry)
 - Agent loop with tool execution (`read_file`, `write_file`, `read_skill`, etc.)
+- Interactive pause/resume loop controls (feedforward, reflection, adjudication, and ask-user-question)
 - Progressive skill loading from `skills/`
 - Workspace editor and class-aware context loading
 - Teacher/class memory read/write and memory-capture confirmation flow

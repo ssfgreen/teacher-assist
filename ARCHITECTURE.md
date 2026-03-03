@@ -7,7 +7,7 @@
 - `packages/backend`: Auth, chat, sessions, workspace/memory APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session/sidebar panels, workspace + memory editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 through Sprint 5.1 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, Sprint 5 memory + session-search flows, and Sprint 5.1 preference-memory extraction/UI updates).
+The current implementation is Sprint 0 through Sprint 6 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, Sprint 5 memory + session-search flows, Sprint 5.1 preference-memory extraction/UI updates, and Sprint 6 command + interactive hook flows).
 
 Shared cross-package types live in `packages/shared/types.ts` and are consumed by both backend and frontend type modules.
 
@@ -34,7 +34,7 @@ Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit en
 
 ### Chat
 
-`POST /api/chat` supports two modes, injects workspace-derived system context, and now runs through an agent loop:
+`POST /api/chat` supports two modes, injects workspace-derived system context, and runs through an agent loop with interactive pause/resume states:
 
 - Non-stream mode: returns JSON `{ response, status, proposals?, sessionId, messages, skillsLoaded, workspaceContextLoaded, memoryContextLoaded }`.
 - Stream mode (`stream: true`): returns SSE with events:
@@ -46,6 +46,11 @@ Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit en
   - `error`
 
 `POST /api/chat` accepts optional `maxTokens` and `classRef`, and forwards provider-appropriate token limit fields.
+`POST /api/chat` now also accepts optional `command`; unknown command ids are rejected with `400`.
+Interactive follow-up endpoints:
+- `POST /api/chat/feedforward-response`
+- `POST /api/chat/adjudication-response`
+- `POST /api/chat/question-response`
 
 System prompt assembly order:
 1. `<assistant-identity>` from workspace `soul.md` (with default fallback)
@@ -56,12 +61,27 @@ System prompt assembly order:
 6. `<skill-manifest>` from discovered skills folder
 7. `<tool-instructions>` generated from tool registry
 
+When `command` is supplied, command-specific framing is appended to agent instructions before loop execution and a feedforward confirmation pause is returned before generation continues.
+
+### Commands
+
+- Endpoint:
+  - `GET /api/commands` (authenticated) returns command metadata for frontend command discovery.
+- Current command ids:
+  - `create-lesson`
+  - `refine-lesson`
+  - `update-class`
+- Frontend composer exposes command selection and includes selected `command` in chat requests.
+- Command runs surface inline feedforward/reflection/adjudication cards in the chat pane.
+
 Agent loop behavior:
 
 - `runAgentLoop` calls model repeatedly until no tool calls are returned.
 - Built-in tools are dispatched via `tools/registry.ts`.
+- Hook lifecycle phases are available: `preLoop`, `postLoop`, `preModel`, `postModel`, `preTool`, `postTool`.
 - Safety limits enforced: `maxTurns` and `maxBudgetUsd`.
 - Tool results are stored as `role: "tool"` messages and persisted to sessions.
+- `ask_user_question` is a first-class tool; the loop pauses with `awaiting_user_question` and resumes via `POST /api/chat/question-response`.
 - For class-targeted prompts, system instructions tell the model to prefer reading `classes/{classRef}/CLASS.md` before making class-specific claims (without hard-enforcing a tool call).
 - Context is maintained by an explicit runtime context state (history, tool lifecycle, task progress, feedback, summary metrics).
 - Loop resilience controls prevent unproductive cycles:
@@ -188,6 +208,12 @@ Single-page React app with Zustand state stores.
   - `Enter` sends.
   - `Shift+Enter` newline.
 - Provider/model/class selectors are rendered below the composer (not in a global header) with localStorage-backed provider/model persistence.
+- Command selector is rendered in the composer controls and maps to `/api/chat` `command`.
+- Interactive hook cards render inline above the chat timeline:
+  - Feedforward (`confirm`, `edit`, `dismiss`)
+  - Reflection (`acknowledge`, `skip`)
+  - Adjudication (`accept`, `revise`, `alternatives`)
+  - AskUserQuestion (option buttons + optional free text)
 - Context indicator showing which workspace files were used for the latest response.
 - Context indicator separates workspace context from memory context.
 - Memory-capture card allows confirm/edit/dismiss decisions and bulk actions after each loop.

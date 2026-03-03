@@ -1,5 +1,6 @@
 import * as authApi from "../api/auth";
 import * as chatApi from "../api/chat";
+import * as commandsApi from "../api/commands";
 import * as memoryApi from "../api/memory";
 import * as sessionsApi from "../api/sessions";
 import * as skillsApi from "../api/skills";
@@ -70,6 +71,20 @@ export function setupDefaultMocks(): void {
   vi.mocked(authApi.me).mockRejectedValue(new Error("Unauthorized"));
   vi.mocked(authApi.login).mockResolvedValue({ teacher });
   vi.mocked(authApi.logout).mockResolvedValue({ ok: true });
+  vi.mocked(commandsApi.listCommands).mockResolvedValue({
+    commands: [
+      {
+        id: "create-lesson",
+        label: "Create lesson",
+        description: "Build a complete lesson draft.",
+      },
+      {
+        id: "refine-lesson",
+        label: "Refine lesson",
+        description: "Refine an existing lesson draft.",
+      },
+    ],
+  });
 
   vi.mocked(sessionsApi.listSessions).mockResolvedValue([]);
   vi.mocked(sessionsApi.createSession).mockImplementation(
@@ -244,4 +259,112 @@ export function setupDefaultMocks(): void {
       };
     },
   );
+  vi.mocked(chatApi.sendFeedforwardResponse).mockResolvedValue({
+    sessionId: "s1",
+    messages: [
+      { role: "user", content: "Plan loops" },
+      { role: "assistant", content: "Hello world" },
+    ],
+    skillsLoaded: [],
+    status: "no_new_memory",
+    trace: {
+      id: "trace-feedforward",
+      createdAt: "2026-02-28T00:00:00.000Z",
+      systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+      estimatedPromptTokens: 42,
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        estimatedCostUsd: 0.000006,
+      },
+      status: "success",
+      steps: [],
+    },
+    workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
+    memoryContextLoaded: ["MEMORY.md"],
+    response: {
+      content: "Hello world",
+      toolCalls: [],
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        estimatedCostUsd: 0.000006,
+      },
+      stopReason: "stop",
+    },
+  });
+  vi.mocked(chatApi.sendAdjudicationResponse).mockResolvedValue({
+    sessionId: "s1",
+    messages: [
+      { role: "user", content: "Plan loops" },
+      { role: "assistant", content: "Hello world" },
+    ],
+    skillsLoaded: [],
+    status: "no_new_memory",
+    trace: {
+      id: "trace-adjudication",
+      createdAt: "2026-02-28T00:00:00.000Z",
+      systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+      estimatedPromptTokens: 42,
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        estimatedCostUsd: 0.000006,
+      },
+      status: "success",
+      steps: [],
+    },
+    workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
+    memoryContextLoaded: ["MEMORY.md"],
+    response: {
+      content: "Hello world",
+      toolCalls: [],
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        estimatedCostUsd: 0.000006,
+      },
+      stopReason: "stop",
+    },
+  });
+  vi.mocked(chatApi.sendQuestionResponse).mockResolvedValue({
+    sessionId: "s1",
+    messages: [
+      { role: "user", content: "Plan loops" },
+      { role: "assistant", content: "Hello world" },
+    ],
+    skillsLoaded: [],
+    status: "no_new_memory",
+    trace: {
+      id: "trace-question",
+      createdAt: "2026-02-28T00:00:00.000Z",
+      systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+      estimatedPromptTokens: 42,
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        estimatedCostUsd: 0.000006,
+      },
+      status: "success",
+      steps: [],
+    },
+    workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
+    memoryContextLoaded: ["MEMORY.md"],
+    response: {
+      content: "Hello world",
+      toolCalls: [],
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        estimatedCostUsd: 0.000006,
+      },
+      stopReason: "stop",
+    },
+  });
 }

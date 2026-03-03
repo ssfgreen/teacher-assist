@@ -2,8 +2,8 @@
 
 ## Alignment Status
 
-- Frontend: Planned (reordered from prior frontend Sprint 8)
-- Backend: Planned (reordered from prior backend Sprint 8)
+- Frontend: Complete
+- Backend: Complete
 
 ## Goal
 
@@ -56,3 +56,17 @@ Introduce command-driven entry points and interactive hook states that pause/res
 ## Notes
 
 The `ask_user_question` tool is agent-initiated and mid-loop, which makes it distinct from the feedforward hook (system-initiated, preLoop). Monitor whether the planner over- or under-uses it during evals and tune the prompt accordingly — what works well for one model may not for another.
+
+## Progress Log
+
+- 2026-03-03: Started Sprint 06 with the first vertical slice:
+  - Backend: Added authenticated `GET /api/commands`
+  - Backend: Added chat request `command` validation and command framing injection into planner instructions
+  - Frontend: Added composer command selector and command propagation to `/api/chat`
+- 2026-03-03: Completed Sprint 06 scope:
+  - Backend: Added hook lifecycle infrastructure (`preLoop`, `postLoop`, `preModel`, `postModel`, `preTool`, `postTool`)
+  - Backend: Added pause/resume APIs for feedforward, adjudication/reflection, and ask-user-question
+  - Backend: Registered `ask_user_question` tool with schema and loop pause behavior
+  - Backend: Added interactive status payloads for feedforward, reflection, adjudication, and question cards
+  - Frontend: Added inline cards and state-machine handling for feedforward, reflection, adjudication, and ask-user-question flows
+  - Verification: Added/updated backend integration + unit coverage and frontend UI tests for command + interaction flows

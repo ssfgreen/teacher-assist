@@ -93,4 +93,22 @@ describe("agent loop", () => {
     expect(repeatedSkillReads[0]?.toolCacheHit).toBe(false);
     expect(repeatedSkillReads[1]?.toolCacheHit).toBe(true);
   });
+
+  it("pauses on ask_user_question and returns question payload", async () => {
+    const result = await runAgentLoop({
+      teacherId: "t1",
+      provider: "openai",
+      model: "mock-agentic-question",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "Create a lesson" },
+      ],
+    });
+
+    expect(result.status).toBe("awaiting_user_question");
+    expect(result.pendingQuestion?.question).toBe(
+      "Which class should I target?",
+    );
+    expect(result.pendingQuestion?.options).toEqual(["3B", "4A"]);
+  });
 });

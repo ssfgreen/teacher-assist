@@ -168,6 +168,41 @@ export function mockResponse(
     return normalize("Completed after duplicate read requests.", messages);
   }
 
+  if (model === "mock-agentic-question") {
+    const asked = messages.some(
+      (message) =>
+        message.role === "tool" &&
+        message.toolName === "ask_user_question" &&
+        Boolean(message.content.trim()),
+    );
+
+    if (!asked) {
+      return {
+        ...normalize("", messages),
+        toolCalls: [
+          {
+            id: "mock-question-1",
+            name: "ask_user_question",
+            input: {
+              question: "Which class should I target?",
+              options: ["3B", "4A"],
+              allow_free_text: true,
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      };
+    }
+
+    const answer = [...messages]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === "tool" && message.toolName === "ask_user_question",
+      )?.content;
+    return normalize(`Great, I will target ${answer}.`, messages);
+  }
+
   return normalize(
     `[mock:${provider}/${model}] ${latestUserMessage(messages)}`,
     messages,

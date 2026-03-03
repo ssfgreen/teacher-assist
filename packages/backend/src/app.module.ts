@@ -5,6 +5,8 @@ import { AuthController } from "./modules/auth/auth.controller";
 import { AuthService } from "./modules/auth/auth.service";
 import { ChatController } from "./modules/chat/chat.controller";
 import { ChatService } from "./modules/chat/chat.service";
+import { CommandsController } from "./modules/commands/commands.controller";
+import { CommandsService } from "./modules/commands/commands.service";
 import { MemoryController } from "./modules/memory/memory.controller";
 import { MemoryService } from "./modules/memory/memory.service";
 import { SessionsController } from "./modules/sessions/sessions.controller";
@@ -20,6 +22,7 @@ import { buildTypeOrmOptions } from "./typeorm/options";
   controllers: [
     AuthController,
     ChatController,
+    CommandsController,
     SessionsController,
     SkillsController,
     WorkspaceController,
@@ -28,6 +31,7 @@ import { buildTypeOrmOptions } from "./typeorm/options";
   providers: [
     AuthService,
     ChatService,
+    CommandsService,
     SessionsService,
     SkillsService,
     WorkspaceService,

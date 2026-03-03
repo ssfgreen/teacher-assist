@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 
+import { listCommands } from "./api/commands";
 import { readMemoryFile as readMemoryFileApi } from "./api/memory";
 import { listSkills, readSkill } from "./api/skills";
 import { readWorkspaceFile as readWorkspaceFileApi } from "./api/workspace";
@@ -15,6 +16,7 @@ import Shell from "./components/layout/Shell";
 import MarkdownRenderer from "./components/markdown/MarkdownRenderer";
 import LoginPanel from "./features/auth/LoginPanel";
 import ChatPane from "./features/chat/ChatPane";
+import InteractiveCard from "./features/chat/InteractiveCard";
 import { MODEL_OPTIONS } from "./features/chat/model-options";
 import { useChatSession } from "./features/chat/useChatSession";
 import MemoryCaptureCard from "./features/memory/MemoryCaptureCard";
@@ -27,6 +29,7 @@ import { useSessionStore } from "./stores/sessionStore";
 import { useWorkspaceStore } from "./stores/workspaceStore";
 import type {
   ChatMessage,
+  CommandSummary,
   SessionRecord,
   SkillManifestItem,
   WorkspaceNode,
@@ -243,6 +246,9 @@ export default function App() {
     memory: false,
   });
   const [selectedClassRef, setSelectedClassRef] = useState("");
+  const [selectedCommandId, setSelectedCommandId] = useState("");
+  const [commands, setCommands] = useState<CommandSummary[]>([]);
+  const [commandsError, setCommandsError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillManifestItem[]>([]);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(
@@ -293,12 +299,20 @@ export default function App() {
     chatError,
     activeSkills,
     traceHistory,
+    interactiveState,
+    interactiveInput,
+    setInteractiveInput,
     sendMessage,
+    submitFeedforward,
+    submitReflection,
+    submitAdjudication,
+    submitQuestion,
     cancelMessage,
   } = useChatSession({
     currentSession,
     provider,
     model,
+    selectedCommandId,
     selectedClassRef,
     createNewSession,
     upsertCurrentSession,
@@ -334,6 +348,25 @@ export default function App() {
         setSkills([]);
         setSkillsError(
           error instanceof Error ? error.message : "Failed to load skills",
+        );
+      }
+    })();
+  }, [teacher]);
+
+  useEffect(() => {
+    if (!teacher) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await listCommands();
+        setCommands(response.commands);
+        setCommandsError(null);
+      } catch (error) {
+        setCommands([]);
+        setCommandsError(
+          error instanceof Error ? error.message : "Failed to load commands",
         );
       }
     })();
@@ -1023,6 +1056,48 @@ export default function App() {
             sessionId={currentSession?.id ?? null}
             onSubmitted={refreshSessions}
           />
+          <InteractiveCard
+            state={
+              interactiveState
+                ? interactiveState.kind === "feedforward"
+                  ? {
+                      kind: "feedforward",
+                      summary: interactiveState.summary,
+                    }
+                  : interactiveState.kind === "reflection"
+                    ? {
+                        kind: "reflection",
+                        prompt: interactiveState.prompt,
+                      }
+                    : interactiveState.kind === "adjudication"
+                      ? {
+                          kind: "adjudication",
+                          sections: interactiveState.sections,
+                        }
+                      : {
+                          kind: "question",
+                          question: interactiveState.question,
+                          options: interactiveState.options,
+                          allowFreeText: interactiveState.allowFreeText,
+                        }
+                : null
+            }
+            input={interactiveInput}
+            setInput={setInteractiveInput}
+            loading={chatLoading}
+            onFeedforward={(action, note) => {
+              void submitFeedforward(action, note);
+            }}
+            onReflection={(action) => {
+              void submitReflection(action);
+            }}
+            onAdjudication={(action, note) => {
+              void submitAdjudication(action, note);
+            }}
+            onQuestion={(answer) => {
+              void submitQuestion(answer);
+            }}
+          />
           <div
             className={`min-h-0 flex-1 pr-0 transition-[padding] duration-200 ease-out ${inspector ? "lg:pr-[26rem]" : ""}`}
           >
@@ -1030,6 +1105,9 @@ export default function App() {
               classRefs={classRefs}
               selectedClassRef={selectedClassRef}
               setSelectedClassRef={setSelectedClassRef}
+              commands={commands}
+              selectedCommandId={selectedCommandId}
+              setSelectedCommandId={setSelectedCommandId}
               contextHistory={currentSession?.contextHistory ?? []}
               memoryContextHistory={currentSession?.memoryContextHistory ?? []}
               traceHistory={traceHistory}
@@ -1057,7 +1135,11 @@ export default function App() {
               onInspectRawResponse={inspectRawResponse}
               sendMessage={sendMessage}
               cancelMessage={cancelMessage}
+              interactiveLocked={Boolean(interactiveState)}
             />
+            {commandsError ? (
+              <p className="mt-2 text-xs text-danger-700">{commandsError}</p>
+            ) : null}
           </div>
           {inspector ? (
             <aside

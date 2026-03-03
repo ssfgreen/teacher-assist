@@ -82,6 +82,207 @@ describe("server integration", () => {
     expect(meAfterLogoutResponse.status).toBe(401);
   });
 
+  it("lists available commands for authenticated users", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const response = await request("/api/commands", {
+      headers: { cookie },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      commands: Array<{ id: string; label: string; description: string }>;
+    };
+    expect(body.commands.length > 0).toBe(true);
+    expect(
+      body.commands.some((command) => command.id === "create-lesson"),
+    ).toBe(true);
+  });
+
+  it("rejects unknown command values in chat requests", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const response = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        command: "unknown-command",
+        messages: [{ role: "user", content: "Hello" }],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("runs feedforward -> reflection -> adjudication flow for command chats", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        command: "create-lesson",
+        messages: [{ role: "user", content: "Plan loops for 3B" }],
+      }),
+    });
+
+    expect(chatResponse.status).toBe(200);
+    const paused = (await chatResponse.json()) as {
+      status: string;
+      sessionId: string;
+      feedforward?: { summary: string };
+    };
+    expect(paused.status).toBe("awaiting_feedforward");
+    expect(Boolean(paused.feedforward?.summary)).toBe(true);
+
+    const feedforwardResponse = await request(
+      "/api/chat/feedforward-response",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          sessionId: paused.sessionId,
+          action: "confirm",
+        }),
+      },
+    );
+    expect(feedforwardResponse.status).toBe(200);
+    const reflection = (await feedforwardResponse.json()) as { status: string };
+    expect(reflection.status).toBe("awaiting_reflection");
+
+    const reflectionResponse = await request(
+      "/api/chat/adjudication-response",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({
+          sessionId: paused.sessionId,
+          action: "acknowledge",
+        }),
+      },
+    );
+    expect(reflectionResponse.status).toBe(200);
+    const adjudication = (await reflectionResponse.json()) as {
+      status: string;
+    };
+    expect(adjudication.status).toBe("awaiting_adjudication");
+
+    const acceptResponse = await request("/api/chat/adjudication-response", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        sessionId: paused.sessionId,
+        action: "accept",
+      }),
+    });
+    expect(acceptResponse.status).toBe(200);
+    const finalBody = (await acceptResponse.json()) as { status: string };
+    expect(
+      finalBody.status === "no_new_memory" ||
+        finalBody.status === "awaiting_memory_capture",
+    ).toBe(true);
+  });
+
+  it("pauses on ask_user_question and resumes via question-response", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-agentic-question",
+        messages: [{ role: "user", content: "Create a lesson" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+
+    const paused = (await chatResponse.json()) as {
+      sessionId: string;
+      status: string;
+      question?: { question: string; options?: string[] };
+    };
+    expect(paused.status).toBe("awaiting_user_question");
+    expect(paused.question?.question).toBe("Which class should I target?");
+
+    const questionResponse = await request("/api/chat/question-response", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        sessionId: paused.sessionId,
+        answer: "3B",
+      }),
+    });
+    expect(questionResponse.status).toBe(200);
+
+    const resumed = (await questionResponse.json()) as {
+      status: string;
+      response: { content: string };
+    };
+    expect(
+      resumed.status === "no_new_memory" ||
+        resumed.status === "awaiting_memory_capture",
+    ).toBe(true);
+    expect(resumed.response.content.includes("3B")).toBe(true);
+  });
+
   it("supports session CRUD and chat persistence", async () => {
     const loginResponse = await request("/api/auth/login", {
       method: "POST",

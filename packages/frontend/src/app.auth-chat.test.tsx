@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 import * as authApi from "./api/auth";
 import * as chatApi from "./api/chat";
+import * as commandsApi from "./api/commands";
 import * as skillsApi from "./api/skills";
 import * as workspaceApi from "./api/workspace";
 import { setupDefaultMocks, teacher } from "./test/app-fixtures";
@@ -11,6 +12,7 @@ import type { ChatApiResponse } from "./types";
 
 vi.mock("./api/auth");
 vi.mock("./api/chat");
+vi.mock("./api/commands");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
 vi.mock("./api/skills");
@@ -219,6 +221,153 @@ describe("App auth and chat", () => {
     expect(vi.mocked(chatApi.sendChatStream).mock.calls[0][0]).toMatchObject({
       provider: "anthropic",
       model: "claude-sonnet-4-6",
+    });
+  });
+
+  it("loads command options and sends selected command in chat request", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    await waitFor(() => {
+      expect(commandsApi.listCommands).toHaveBeenCalledTimes(1);
+    });
+
+    await user.selectOptions(screen.getByLabelText("Command"), "create-lesson");
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Draft for loops{enter}");
+
+    await waitFor(() => {
+      expect(chatApi.sendChatStream).toHaveBeenCalledTimes(1);
+    });
+
+    expect(vi.mocked(chatApi.sendChatStream).mock.calls[0]?.[0]).toMatchObject({
+      command: "create-lesson",
+    });
+  });
+
+  it("shows feedforward card and submits confirm response", async () => {
+    vi.mocked(chatApi.sendChatStream).mockResolvedValueOnce({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "Plan loops" }],
+      skillsLoaded: [],
+      status: "awaiting_feedforward",
+      feedforward: {
+        summary: "Confirm this context before I proceed.",
+      },
+      trace: {
+        id: "trace-feedforward-await",
+        createdAt: "2026-03-03T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md"],
+      memoryContextLoaded: ["MEMORY.md"],
+      response: {
+        content: "",
+        toolCalls: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+    await user.selectOptions(screen.getByLabelText("Command"), "create-lesson");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    await screen.findByText(/feedforward confirmation/i);
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+
+    await waitFor(() => {
+      expect(chatApi.sendFeedforwardResponse).toHaveBeenCalledWith({
+        sessionId: "s1",
+        action: "confirm",
+        note: undefined,
+      });
+    });
+  });
+
+  it("renders ask-user-question card and submits selected option", async () => {
+    vi.mocked(chatApi.sendChatStream).mockResolvedValueOnce({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "Plan loops" }],
+      skillsLoaded: [],
+      status: "awaiting_user_question",
+      question: {
+        question: "Which class should I target?",
+        options: ["3B", "4A"],
+        allow_free_text: true,
+      },
+      trace: {
+        id: "trace-user-question",
+        createdAt: "2026-03-03T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md"],
+      memoryContextLoaded: ["MEMORY.md"],
+      response: {
+        content: "",
+        toolCalls: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    await screen.findByText("Which class should I target?");
+    await user.click(screen.getByRole("button", { name: "3B" }));
+
+    await waitFor(() => {
+      expect(chatApi.sendQuestionResponse).toHaveBeenCalledWith({
+        sessionId: "s1",
+        answer: "3B",
+      });
     });
   });
 

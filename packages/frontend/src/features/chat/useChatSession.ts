@@ -1,23 +1,60 @@
 import { useEffect, useRef, useState } from "react";
 
-import { sendChatStream } from "../../api/chat";
+import {
+  sendAdjudicationResponse,
+  sendChatStream,
+  sendFeedforwardResponse,
+  sendQuestionResponse,
+} from "../../api/chat";
 import { useMemoryStore } from "../../stores/memoryStore";
-import type { ChatMessage, ChatTrace, SessionRecord } from "../../types";
+import type {
+  ChatApiResponse,
+  ChatMessage,
+  ChatTrace,
+  SessionRecord,
+} from "../../types";
 
 interface UseChatSessionParams {
   currentSession: SessionRecord | null;
   provider: "anthropic" | "openai";
   model: string;
+  selectedCommandId: string;
   selectedClassRef: string;
   createNewSession: () => Promise<SessionRecord>;
   upsertCurrentSession: (session: SessionRecord) => void;
   refreshSessions: () => Promise<void>;
 }
 
+type InteractiveState =
+  | {
+      kind: "feedforward";
+      sessionId: string;
+      summary: string;
+    }
+  | {
+      kind: "reflection";
+      sessionId: string;
+      prompt: string;
+    }
+  | {
+      kind: "adjudication";
+      sessionId: string;
+      sections: Array<{ id: string; title: string; preview: string }>;
+    }
+  | {
+      kind: "question";
+      sessionId: string;
+      question: string;
+      options: string[];
+      allowFreeText: boolean;
+    }
+  | null;
+
 export function useChatSession({
   currentSession,
   provider,
   model,
+  selectedCommandId,
   selectedClassRef,
   createNewSession,
   upsertCurrentSession,
@@ -39,6 +76,9 @@ export function useChatSession({
   const [activeSkills, setActiveSkills] = useState<string[]>([]);
   const [traceHistory, setTraceHistory] = useState<ChatTrace[]>([]);
   const [contextExpanded, setContextExpanded] = useState(false);
+  const [interactiveState, setInteractiveState] =
+    useState<InteractiveState>(null);
+  const [interactiveInput, setInteractiveInput] = useState("");
 
   useEffect(() => {
     if (previousSessionIdRef.current === currentSessionId) {
@@ -50,11 +90,96 @@ export function useChatSession({
     setLastContextPaths(currentSession?.contextHistory?.[0] ?? []);
     setLastMemoryContextPaths(currentSession?.memoryContextHistory?.[0] ?? []);
     setActiveSkills(currentSession?.activeSkills ?? []);
+    setInteractiveState(null);
+    setInteractiveInput("");
   }, [currentSession, currentSessionId]);
+
+  const applyChatResponse = (
+    response: ChatApiResponse,
+    activeSession: SessionRecord,
+    previewTrace: ChatTrace | null,
+  ) => {
+    upsertCurrentSession({
+      ...activeSession,
+      id: response.sessionId,
+      updatedAt: new Date().toISOString(),
+      messages: response.messages,
+      traceHistory: response.trace
+        ? [response.trace, ...(activeSession.traceHistory ?? [])]
+        : (activeSession.traceHistory ?? []),
+      contextHistory: response.workspaceContextLoaded
+        ? [
+            response.workspaceContextLoaded,
+            ...(activeSession.contextHistory ?? []),
+          ]
+        : (activeSession.contextHistory ?? []),
+      memoryContextHistory: response.memoryContextLoaded
+        ? [
+            response.memoryContextLoaded,
+            ...(activeSession.memoryContextHistory ?? []),
+          ]
+        : (activeSession.memoryContextHistory ?? []),
+      activeSkills: response.skillsLoaded ?? activeSession.activeSkills ?? [],
+    });
+    setLastContextPaths(response.workspaceContextLoaded ?? []);
+    setLastMemoryContextPaths(response.memoryContextLoaded ?? []);
+    setActiveSkills(response.skillsLoaded ?? []);
+    if (response.trace) {
+      setTraceHistory((previous) => [
+        response.trace as ChatTrace,
+        ...previous.filter((trace) => trace.id !== previewTrace?.id),
+      ]);
+    } else if (previewTrace) {
+      setTraceHistory((previous) =>
+        previous.filter((trace) => trace.id !== previewTrace?.id),
+      );
+    }
+    if (response.status === "awaiting_memory_capture" && response.proposals) {
+      setMemoryProposals(response.proposals);
+    } else {
+      clearMemoryProposals();
+    }
+
+    if (response.status === "awaiting_feedforward" && response.feedforward) {
+      setInteractiveState({
+        kind: "feedforward",
+        sessionId: response.sessionId,
+        summary: response.feedforward.summary,
+      });
+      return;
+    }
+    if (response.status === "awaiting_reflection" && response.reflection) {
+      setInteractiveState({
+        kind: "reflection",
+        sessionId: response.sessionId,
+        prompt: response.reflection.prompt,
+      });
+      return;
+    }
+    if (response.status === "awaiting_adjudication" && response.adjudication) {
+      setInteractiveState({
+        kind: "adjudication",
+        sessionId: response.sessionId,
+        sections: response.adjudication.sections,
+      });
+      return;
+    }
+    if (response.status === "awaiting_user_question" && response.question) {
+      setInteractiveState({
+        kind: "question",
+        sessionId: response.sessionId,
+        question: response.question.question,
+        options: response.question.options ?? [],
+        allowFreeText: response.question.allow_free_text,
+      });
+      return;
+    }
+    setInteractiveState(null);
+  };
 
   const sendMessage = async () => {
     const content = messageInput.trim();
-    if (!content || chatLoading) {
+    if (!content || chatLoading || interactiveState) {
       return;
     }
 
@@ -116,6 +241,7 @@ export function useChatSession({
           sessionId: activeSession.id,
           provider,
           model,
+          command: selectedCommandId || undefined,
           classRef: selectedClassRef || undefined,
           messages: nextMessages,
         },
@@ -161,46 +287,7 @@ export function useChatSession({
         abortController.signal,
       );
 
-      upsertCurrentSession({
-        ...streamBaseSession,
-        id: response.sessionId,
-        updatedAt: new Date().toISOString(),
-        messages: response.messages,
-        traceHistory: response.trace
-          ? [response.trace, ...(activeSession.traceHistory ?? [])]
-          : (activeSession.traceHistory ?? []),
-        contextHistory: response.workspaceContextLoaded
-          ? [
-              response.workspaceContextLoaded,
-              ...(activeSession.contextHistory ?? []),
-            ]
-          : (activeSession.contextHistory ?? []),
-        memoryContextHistory: response.memoryContextLoaded
-          ? [
-              response.memoryContextLoaded,
-              ...(activeSession.memoryContextHistory ?? []),
-            ]
-          : (activeSession.memoryContextHistory ?? []),
-        activeSkills: response.skillsLoaded ?? activeSession.activeSkills ?? [],
-      });
-      setLastContextPaths(response.workspaceContextLoaded ?? []);
-      setLastMemoryContextPaths(response.memoryContextLoaded ?? []);
-      setActiveSkills(response.skillsLoaded ?? []);
-      if (response.trace) {
-        setTraceHistory((previous) => [
-          response.trace as ChatTrace,
-          ...previous.filter((trace) => trace.id !== previewTrace?.id),
-        ]);
-      } else if (previewTrace) {
-        setTraceHistory((previous) =>
-          previous.filter((trace) => trace.id !== previewTrace?.id),
-        );
-      }
-      if (response.status === "awaiting_memory_capture" && response.proposals) {
-        setMemoryProposals(response.proposals);
-      } else {
-        clearMemoryProposals();
-      }
+      applyChatResponse(response, streamBaseSession, previewTrace);
       await refreshSessions();
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
@@ -214,6 +301,84 @@ export function useChatSession({
       abortControllerRef.current = null;
       setChatLoading(false);
     }
+  };
+
+  const runInteractiveAction = async (
+    action: () => Promise<ChatApiResponse>,
+  ) => {
+    if (chatLoading || !currentSession) {
+      return;
+    }
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      const response = await action();
+      applyChatResponse(response, currentSession, null);
+      setInteractiveInput("");
+      await refreshSessions();
+    } catch (error) {
+      setChatError(
+        error instanceof Error ? error.message : "Failed interactive action",
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const submitFeedforward = async (
+    action: "confirm" | "edit" | "dismiss",
+    note?: string,
+  ) => {
+    if (interactiveState?.kind !== "feedforward") {
+      return;
+    }
+    await runInteractiveAction(() =>
+      sendFeedforwardResponse({
+        sessionId: interactiveState.sessionId,
+        action,
+        note,
+      }),
+    );
+  };
+
+  const submitReflection = async (action: "acknowledge" | "skip") => {
+    if (interactiveState?.kind !== "reflection") {
+      return;
+    }
+    await runInteractiveAction(() =>
+      sendAdjudicationResponse({
+        sessionId: interactiveState.sessionId,
+        action,
+      }),
+    );
+  };
+
+  const submitAdjudication = async (
+    action: "accept" | "revise" | "alternatives",
+    note?: string,
+  ) => {
+    if (interactiveState?.kind !== "adjudication") {
+      return;
+    }
+    await runInteractiveAction(() =>
+      sendAdjudicationResponse({
+        sessionId: interactiveState.sessionId,
+        action,
+        note,
+      }),
+    );
+  };
+
+  const submitQuestion = async (answer: string) => {
+    if (interactiveState?.kind !== "question") {
+      return;
+    }
+    await runInteractiveAction(() =>
+      sendQuestionResponse({
+        sessionId: interactiveState.sessionId,
+        answer,
+      }),
+    );
   };
 
   const cancelMessage = () => {
@@ -231,7 +396,14 @@ export function useChatSession({
     lastMemoryContextPaths,
     activeSkills,
     traceHistory,
+    interactiveState,
+    interactiveInput,
+    setInteractiveInput,
     sendMessage,
+    submitFeedforward,
+    submitReflection,
+    submitAdjudication,
+    submitQuestion,
     cancelMessage,
   };
 }

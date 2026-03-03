@@ -38,6 +38,7 @@ cd ../backend && bun test
 - Tests:
   - `packages/frontend/src/app.auth-chat.test.tsx`
     - `uses selected provider and model for chat requests`
+    - `loads command options and sends selected command in chat request`
 
 ### 3. Class context propagation
 
@@ -93,6 +94,16 @@ cd ../backend && bun test
     - `handles login and streams chat response on Enter` (stream + state stability)
   - `packages/frontend/src/app.workspace.test.tsx`
     - `opens workspace file and shows context indicator metadata` (context rendering path; includes memory context split in UI)
+
+### 8. Interactive hook cards and ask-user-question flow
+
+- Why critical:
+  - Sprint 6 requires explicit pause/resume UX for command and mid-loop clarification.
+  - Regressions here break command completion and teacher-in-the-loop controls.
+- Tests:
+  - `packages/frontend/src/app.auth-chat.test.tsx`
+    - `shows feedforward card and submits confirm response`
+    - `renders ask-user-question card and submits selected option`
 
 ## Backend Critical Paths
 
@@ -242,6 +253,25 @@ cd ../backend && bun test
     - `supports teachers table CRUD operations`
     - `supports sessions table CRUD operations`
     - `loads database url from environment variables with fallback`
+
+### 15. Command discovery and interactive routing (Sprint 6)
+
+- Why critical:
+  - Command-driven UX is the Sprint 6 entrypoint and must remain discoverable/wired.
+  - Invalid command routing must fail fast to avoid silent prompt drift.
+- Tests:
+  - `packages/backend/tests/server.integration.test.ts`
+    - `lists available commands for authenticated users`
+    - `rejects unknown command values in chat requests`
+    - `runs feedforward -> reflection -> adjudication flow for command chats`
+    - `pauses on ask_user_question and resumes via question-response`
+  - `packages/backend/tests/commands.test.ts`
+    - `lists command definitions with stable ids`
+    - `builds command instructions for known commands`
+  - `packages/backend/tests/agent.test.ts`
+    - `pauses on ask_user_question and returns question payload`
+  - `packages/backend/tests/tools.registry.test.ts`
+    - `generates provider tool schemas` (includes `ask_user_question` schema contract)
 
 ## Notes
 

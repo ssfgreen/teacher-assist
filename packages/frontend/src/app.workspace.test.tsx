@@ -8,6 +8,7 @@ import { setupDefaultMocks } from "./test/app-fixtures";
 
 vi.mock("./api/auth");
 vi.mock("./api/chat");
+vi.mock("./api/commands");
 vi.mock("./api/sessions");
 vi.mock("./api/workspace");
 vi.mock("./api/skills");
