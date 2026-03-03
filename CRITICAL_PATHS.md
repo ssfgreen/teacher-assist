@@ -233,6 +233,16 @@ cd ../backend && bun test
     - `truncates loaded memory context to 200 lines`
     - `searches sessions by keyword and class filter`
 
+### 14. Sprint 0 persistence/config integrity
+
+- Why critical:
+  - Baseline database semantics and env loading must remain reliable as architecture changes.
+- Tests:
+  - `packages/backend/tests/sprint0.persistence.test.ts`
+    - `supports teachers table CRUD operations`
+    - `supports sessions table CRUD operations`
+    - `loads database url from environment variables with fallback`
+
 ## Notes
 
 - Keep this file updated whenever a critical path changes or tests are reorganized.

@@ -33,6 +33,20 @@ interface RunAgentLoopParams {
   };
 }
 
+interface ToolExecutionResult {
+  name: string;
+  output: string;
+  isError: boolean;
+  cacheHit: boolean;
+}
+
+const READ_ONCE_TOOLS = new Set([
+  "read_file",
+  "read_skill",
+  "read_memory",
+  "list_directory",
+]);
+
 function emptyUsage(): TokenUsage {
   return {
     inputTokens: 0,
@@ -63,6 +77,92 @@ function skillNameFromToolInput(input: Record<string, unknown>): string | null {
   return name || null;
 }
 
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([a], [b]) => a.localeCompare(b),
+  );
+  return `{${entries
+    .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+    .join(",")}}`;
+}
+
+function normalizeToolInput(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...input };
+  if (typeof normalized.path === "string") {
+    normalized.path = normalized.path.trim();
+  }
+  if (typeof normalized.target === "string") {
+    normalized.target = normalized.target.trim();
+  }
+  return normalized;
+}
+
+function readOnceToolKey(
+  name: string,
+  input: Record<string, unknown>,
+): string | null {
+  if (!READ_ONCE_TOOLS.has(name)) {
+    return null;
+  }
+
+  return `${name}|${stableJson(normalizeToolInput(input))}`;
+}
+
+async function executeToolWithReadOnceCache(params: {
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  toolContext: ToolContext;
+  cache: Map<
+    string,
+    {
+      name: string;
+      output: string;
+      isError: boolean;
+    }
+  >;
+}): Promise<ToolExecutionResult> {
+  const key = readOnceToolKey(params.toolName, params.toolInput);
+  if (key) {
+    const cached = params.cache.get(key);
+    if (cached) {
+      return {
+        ...cached,
+        cacheHit: true,
+      };
+    }
+  }
+
+  const result = await dispatchToolCall(
+    { id: "tool-call", name: params.toolName, input: params.toolInput },
+    params.toolContext,
+  );
+
+  if (key) {
+    params.cache.set(key, {
+      name: result.name,
+      output: result.output,
+      isError: result.isError,
+    });
+  }
+
+  return {
+    name: result.name,
+    output: result.output,
+    isError: result.isError,
+    cacheHit: false,
+  };
+}
+
 export async function runAgentLoop(
   params: RunAgentLoopParams,
 ): Promise<AgentResult> {
@@ -78,6 +178,10 @@ export async function runAgentLoop(
     sessionId: params.sessionId,
   };
   const tools = listToolDefinitions();
+  const readOnceResultCache = new Map<
+    string,
+    { name: string; output: string; isError: boolean }
+  >();
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
     if (usage.estimatedCostUsd > maxBudgetUsd) {
@@ -123,7 +227,12 @@ export async function runAgentLoop(
     }
 
     for (const toolCall of response.toolCalls) {
-      const result = await dispatchToolCall(toolCall, toolContext);
+      const result = await executeToolWithReadOnceCache({
+        toolName: toolCall.name,
+        toolInput: toolCall.input,
+        toolContext,
+        cache: readOnceResultCache,
+      });
       const content = result.isError
         ? `ERROR: ${result.output}`
         : result.output;
@@ -141,6 +250,7 @@ export async function runAgentLoop(
         toolName: result.name,
         toolInput: toolCall.input,
         toolError: result.isError,
+        toolCacheHit: result.cacheHit,
         content,
       });
     }
@@ -179,6 +289,10 @@ export async function runAgentLoopStreaming(
     sessionId: params.sessionId,
   };
   const tools = listToolDefinitions();
+  const readOnceResultCache = new Map<
+    string,
+    { name: string; output: string; isError: boolean }
+  >();
 
   const stopped = () => Boolean(params.shouldStop?.());
 
@@ -258,7 +372,12 @@ export async function runAgentLoopStreaming(
         };
       }
 
-      const result = await dispatchToolCall(toolCall, toolContext);
+      const result = await executeToolWithReadOnceCache({
+        toolName: toolCall.name,
+        toolInput: toolCall.input,
+        toolContext,
+        cache: readOnceResultCache,
+      });
       const content = result.isError
         ? `ERROR: ${result.output}`
         : result.output;
@@ -276,6 +395,7 @@ export async function runAgentLoopStreaming(
         toolName: result.name,
         toolInput: toolCall.input,
         toolError: result.isError,
+        toolCacheHit: result.cacheHit,
         content,
       };
 

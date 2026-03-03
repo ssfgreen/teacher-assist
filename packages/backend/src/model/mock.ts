@@ -129,6 +129,45 @@ export function mockResponse(
     );
   }
 
+  if (model === "mock-agentic-duplicate-read") {
+    const repeatedSkillReads = messages.filter(
+      (message) =>
+        message.role === "tool" &&
+        message.toolName === "read_skill" &&
+        message.toolInput?.target === "backward-design",
+    ).length;
+
+    if (repeatedSkillReads === 0) {
+      return {
+        ...normalize("", messages),
+        toolCalls: [
+          {
+            id: "mock-dup-read-1",
+            name: "read_skill",
+            input: { target: "backward-design" },
+          },
+        ],
+        stopReason: "tool_use",
+      };
+    }
+
+    if (repeatedSkillReads === 1) {
+      return {
+        ...normalize("", messages),
+        toolCalls: [
+          {
+            id: "mock-dup-read-2",
+            name: "read_skill",
+            input: { target: "backward-design" },
+          },
+        ],
+        stopReason: "tool_use",
+      };
+    }
+
+    return normalize("Completed after duplicate read requests.", messages);
+  }
+
   return normalize(
     `[mock:${provider}/${model}] ${latestUserMessage(messages)}`,
     messages,

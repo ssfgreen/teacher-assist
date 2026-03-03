@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:playground": "vite --open /playground",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "biome check .",

@@ -1,4 +1,10 @@
-export type Provider = "anthropic" | "openai";
+import type {
+  ChatMessage as SharedChatMessage,
+  Provider as SharedProvider,
+  TokenUsage as SharedTokenUsage,
+} from "../../shared/types";
+
+export type Provider = SharedProvider;
 
 export interface ToolCall {
   id: string;
@@ -17,14 +23,7 @@ export interface ModelToolDefinition {
   };
 }
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  toolCallId?: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  toolError?: boolean;
-}
+export type ChatMessage = SharedChatMessage;
 
 export interface SessionTask {
   id: string;
@@ -37,12 +36,7 @@ export interface SkillSummary {
   description: string;
 }
 
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  estimatedCostUsd: number;
-}
+export type TokenUsage = SharedTokenUsage;
 
 export interface ChatTraceStep {
   toolName: string;

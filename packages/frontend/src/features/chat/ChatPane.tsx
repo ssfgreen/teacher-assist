@@ -70,6 +70,25 @@ function toolMessageSignature(message: ChatMessage): string {
   )}|${message.toolError ? "1" : "0"}|${message.content}`;
 }
 
+function readOnceToolSignature(message: ChatMessage): string | null {
+  if (message.role !== "tool") {
+    return null;
+  }
+
+  if (
+    message.toolName !== "read_file" &&
+    message.toolName !== "read_skill" &&
+    message.toolName !== "read_memory" &&
+    message.toolName !== "list_directory"
+  ) {
+    return null;
+  }
+
+  return `${message.toolName ?? "tool"}|${JSON.stringify(
+    message.toolInput ?? {},
+  )}`;
+}
+
 function alignByTurn<T>(
   turnCount: number,
   newestFirstValues: T[],
@@ -166,10 +185,22 @@ function buildTimelineEntries(
       });
     }
 
-    const turnMessages = messages.slice(
+    const rawTurnMessages = messages.slice(
       userMessageIndex + 1,
       nextUserMessageIndex,
     );
+    const seenReadOnceTools = new Set<string>();
+    const turnMessages = rawTurnMessages.filter((message) => {
+      const signature = readOnceToolSignature(message);
+      if (!signature) {
+        return true;
+      }
+      if (seenReadOnceTools.has(signature)) {
+        return false;
+      }
+      seenReadOnceTools.add(signature);
+      return true;
+    });
     const toolPositions = turnMessages.reduce<number[]>(
       (acc, message, index) => {
         if (message.role === "tool") {

@@ -2,7 +2,7 @@
 
 Monorepo scaffold for the `teacher-assist` research prototype.
 
-This repository currently includes Sprint 0 through Sprint 5:
+This repository currently includes Sprint 0 through Sprint 5.1:
 - Monorepo workspaces (`packages/backend`, `packages/frontend`)
 - Bun + TypeScript setup
 - NestJS backend module architecture (controllers/services)
@@ -24,6 +24,8 @@ This repository currently includes Sprint 0 through Sprint 5:
 - Streaming loop UI improvements (cancel, streamed tool-step visibility, typing cursor, auto-scroll)
 - Memory system (teacher/class memory files, memory APIs, prompt injection, memory-capture confirmation flow)
 - Session search tooling over persisted session text
+- Shared backend/frontend core chat/provider/token types via `packages/shared/types.ts`
+- Isolated frontend component playground (`/playground`) backed by raw Tailwind UI primitives
 
 ## OpenAI Tools and Skills Note
 
@@ -134,6 +136,13 @@ bun run dev:backend
 bun run dev:frontend
 ```
 
+Optional UI component isolation preview:
+
+```bash
+cd packages/frontend
+bun run dev:playground
+```
+
 3. Login credentials for local testing:
 
 - Email: `teacher@example.com`
@@ -241,6 +250,7 @@ If you switch computers or recreate Docker volumes, rerun the migration command 
 
 - `packages/backend`: NestJS-on-Bun backend
 - `packages/frontend`: Vite + React + TS frontend scaffold
+- `packages/shared`: shared cross-package TypeScript types
 - `specifications/`: product and engineering specifications
 - `skills/`: skills
 - `workspace/`: seed markdown files and local artifacts

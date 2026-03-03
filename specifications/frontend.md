@@ -12,12 +12,12 @@ Companion to `backend.md`. Each sprint ships frontend and backend together — n
 
 - [x] Initialise `packages/frontend` with Vite + React + TypeScript
 - [x] Tailwind CSS configuration (`tailwind.config.ts`) with project colour palette and typography
-- [ ] Component library foundation: decide on ShadCN/ui (customised) or raw Tailwind components
+- [x] Component library foundation: raw Tailwind-based `components/ui` primitives
 - [x] Base layout shell: responsive container, sidebar + main content area (empty for now)
 - [x] Zustand store scaffolding: `useAuthStore`, `useSessionStore` (empty shells)
 - [x] API client module (`api/client.ts`): base fetch wrapper with auth header injection, error handling, base URL config
-- [ ] TypeScript types shared with backend (import from shared types or duplicate with sync discipline)
-- [ ] Storybook or equivalent for isolated component development (optional but recommended)
+- [x] TypeScript types shared with backend (import from shared types or duplicate with sync discipline)
+- [x] Storybook or equivalent for isolated component development (optional but recommended)
 - [x] Linting and formatting aligned with backend config
 
 ### Component Inventory (shells only)
@@ -516,12 +516,12 @@ ChatWindow
 
 **Goal:** Show memory updates only when genuinely new preferences are learned. Present proposals in teacher-meaningful categories: personal, pedagogical, and class-based.
 
-### Status (Planned)
+### Status (Implemented 2026-03-03)
 
-- [ ] Category-grouped memory proposal UI designed and implemented
-- [ ] `no_new_memory` backend status handled with zero UI interruption
-- [ ] Proposal evidence snippets added to build teacher trust
-- [ ] Memory store updated for category-aware proposal state
+- [x] Category-grouped memory proposal UI designed and implemented
+- [x] `no_new_memory` backend status handled with zero UI interruption
+- [x] Proposal evidence snippets added to build teacher trust
+- [x] Memory store updated for category-aware proposal state
 
 ### Deliverables
 

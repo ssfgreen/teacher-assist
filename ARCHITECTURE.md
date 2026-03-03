@@ -7,7 +7,9 @@
 - `packages/backend`: Auth, chat, sessions, workspace/memory APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session/sidebar panels, workspace + memory editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 through Sprint 5 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, and Sprint 5 memory + session-search flows).
+The current implementation is Sprint 0 through Sprint 5.1 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, Sprint 5 memory + session-search flows, and Sprint 5.1 preference-memory extraction/UI updates).
+
+Shared cross-package types live in `packages/shared/types.ts` and are consumed by both backend and frontend type modules.
 
 ## Backend Runtime
 
@@ -189,6 +191,7 @@ Single-page React app with Zustand state stores.
 - Context indicator showing which workspace files were used for the latest response.
 - Context indicator separates workspace context from memory context.
 - Memory-capture card allows confirm/edit/dismiss decisions and bulk actions after each loop.
+- Frontend component-isolation workflow is available at `/playground` using the raw Tailwind `components/ui` primitives.
 
 ### API Layer
 
@@ -202,7 +205,7 @@ Single-page React app with Zustand state stores.
 
 ### Backend
 
-- Bun tests cover auth, chat, sessions, workspace CRUD, prompt assembly/class extraction, provider switching, access control, stream mode, and key-missing errors.
+- Bun tests cover auth, chat, sessions, workspace CRUD, prompt assembly/class extraction, provider switching, access control, stream mode, key-missing errors, plus explicit Sprint 0 persistence/config checks (teachers CRUD, sessions CRUD, env loading).
 
 ### Frontend
 

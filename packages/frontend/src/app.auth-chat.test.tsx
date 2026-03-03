@@ -514,6 +514,89 @@ describe("App auth and chat", () => {
     await screen.findByText(/read skill: differentiation/i);
   });
 
+  it("deduplicates repeated read_file/read_skill rows within a turn", async () => {
+    vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
+      async (_params, callbacks) => {
+        callbacks.onDelta("Done");
+        return {
+          sessionId: "s-dedupe-reads",
+          skillsLoaded: ["backward-design"],
+          messages: [
+            { role: "user", content: "Plan with context" },
+            {
+              role: "tool",
+              content: "# Class 3B",
+              toolName: "read_file",
+              toolInput: { path: "classes/3B/CLASS.md" },
+            },
+            {
+              role: "tool",
+              content: "Skill: backward-design",
+              toolName: "read_skill",
+              toolInput: { target: "backward-design" },
+            },
+            {
+              role: "tool",
+              content: "# Class 3B",
+              toolName: "read_file",
+              toolInput: { path: "classes/3B/CLASS.md" },
+            },
+            {
+              role: "tool",
+              content: "Skill: backward-design",
+              toolName: "read_skill",
+              toolInput: { target: "backward-design" },
+            },
+            { role: "assistant", content: "Done" },
+          ],
+          workspaceContextLoaded: [],
+          trace: {
+            id: "trace-dedupe-reads",
+            createdAt: "2026-03-03T00:00:00.000Z",
+            systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+            estimatedPromptTokens: 12,
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            status: "success",
+            steps: [],
+          },
+          response: {
+            content: "Done",
+            toolCalls: [],
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              estimatedCostUsd: 0.000004,
+            },
+            stopReason: "stop",
+          },
+        };
+      },
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan with context{enter}");
+
+    expect(
+      await screen.findAllByText(/read skill: backward-design/i),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByText(/read file: classes\/3B\/CLASS\.md/i),
+    ).toHaveLength(1);
+  });
+
   it("opens right inspector when clicking a grouped skill item", async () => {
     vi.mocked(chatApi.sendChatStream).mockImplementationOnce(
       async (_params, callbacks) => {

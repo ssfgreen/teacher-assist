@@ -91,6 +91,13 @@ export async function getTeacherById(id: string): Promise<Teacher | null> {
   return teacher ? toTeacher(teacher) : null;
 }
 
+export async function deleteTeacher(id: string): Promise<boolean> {
+  const ds = await getDataSource();
+  const repository = ds.getRepository(TeacherEntity);
+  const result = await repository.delete({ id });
+  return Boolean(result.affected && result.affected > 0);
+}
+
 export async function createSession(params: {
   teacherId: string;
   provider: Provider;

@@ -17,7 +17,7 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 - [x] Migration `001_teachers.sql`: `teachers` table (id, email, name, password_hash, created_at)
 - [x] Migration `002_sessions.sql`: `sessions` table (id, teacher_id, plugin, command, agent_name, messages JSONB, tasks JSONB, created_at, updated_at)
 - [x] Environment configuration (`.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AUTH_SECRET`)
-- [ ] Shared types package or shared types file between frontend and backend
+- [x] Shared types package or shared types file between frontend and backend
 - [x] Linting (Biome or ESLint) and formatting config
 - [x] Basic test harness with Bun's built-in test runner
 - [x] `CLAUDE.md` at project root
@@ -25,9 +25,9 @@ Companion to `frontend.md`. Each sprint is designed so that frontend and backend
 ### Tests
 
 - [x] Database connection and migration runner works
-- [ ] Teachers table CRUD operations
-- [ ] Sessions table CRUD operations
-- [ ] Environment variable loading
+- [x] Teachers table CRUD operations
+- [x] Sessions table CRUD operations
+- [x] Environment variable loading
 
 ### API Surface (none yet — internal only)
 
@@ -244,10 +244,7 @@ Updated: `POST /api/chat` now accepts `sessionId` and `classRef`
   - `model/mock.ts`
   - `model/shared.ts`
 - [x] Keep `model.ts` public API stable (`callModel`, `streamModel`, provider assertion)
-- [x] Split `store.ts` internals into domain-focused modules:
-  - `store/persistence.ts`
-  - `store/sessions.ts`
-  - `store/teachers.ts`
+- [x] Split `store.ts` stateful internals into focused modules:
   - `store/auth-tokens.ts`
   - `store/rate-limit.ts`
   - `store/state.ts`
@@ -505,12 +502,12 @@ POST   /api/chat/memory-response
 
 **Goal:** Replace generic memory consolidation with targeted extraction of durable preferences from both inbound and outbound messages. Persist only high-value memory in three categories: personal, pedagogical, and class-based. Do not interrupt the teacher when nothing new is learned.
 
-### Status (Planned)
+### Status (Partially implemented 2026-03-03)
 
-- [ ] Structured preference schema and extraction contract finalised
-- [ ] Lightweight extractor model call integrated into post-response pipeline
-- [ ] Novelty/duplicate gate implemented before teacher-facing proposals
-- [ ] Memory-capture API updated to return `no_new_memory` when empty
+- [x] Structured preference schema and extraction contract finalised
+- [x] Lightweight extractor model call integrated into post-response pipeline
+- [x] Novelty/duplicate gate implemented before teacher-facing proposals
+- [x] Memory-capture API updated to return `no_new_memory` when empty
 - [ ] Trace metrics added for extraction precision, novelty rate, and dismissal rate
 
 ### Deliverables

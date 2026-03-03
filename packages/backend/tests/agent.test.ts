@@ -69,4 +69,28 @@ describe("agent loop", () => {
     );
     expect(result.messages.at(-1)?.role).toBe("assistant");
   });
+
+  it("executes read-once tools a single time and uses cache on duplicates", async () => {
+    const result = await runAgentLoop({
+      teacherId: "t1",
+      provider: "openai",
+      model: "mock-agentic-duplicate-read",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "Create a lesson" },
+      ],
+    });
+
+    const repeatedSkillReads = result.messages.filter(
+      (message) =>
+        message.role === "tool" &&
+        message.toolName === "read_skill" &&
+        message.toolInput?.target === "backward-design",
+    );
+
+    expect(result.status).toBe("success");
+    expect(repeatedSkillReads).toHaveLength(2);
+    expect(repeatedSkillReads[0]?.toolCacheHit).toBe(false);
+    expect(repeatedSkillReads[1]?.toolCacheHit).toBe(true);
+  });
 });

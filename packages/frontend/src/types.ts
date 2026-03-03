@@ -1,4 +1,9 @@
-export type Provider = "anthropic" | "openai";
+import type {
+  ChatMessage as SharedChatMessage,
+  Provider as SharedProvider,
+} from "../../shared/types";
+
+export type Provider = SharedProvider;
 
 export interface TeacherProfile {
   id: string;
@@ -6,14 +11,7 @@ export interface TeacherProfile {
   name: string;
 }
 
-export interface ChatMessage {
-  role: "user" | "assistant" | "system" | "tool";
-  content: string;
-  toolCallId?: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  toolError?: boolean;
-}
+export type ChatMessage = SharedChatMessage;
 
 export interface SessionRecord {
   id: string;
