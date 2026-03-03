@@ -4,12 +4,11 @@
 
 These live in ./specifications
 
-There are four documents
+There are now three top-level spec entry points plus a sprint folder:
 
-- product-spec.md which defines the vision for the product
-- dev-spec.md is the overall architecture and development ideas (open for tweaking)
-- frontend.md is a list of frontend tasks loosely structured around different sprints
-- backend.md is a list of backend tasks
+- `product-spec.md` which defines the vision for the product
+- `dev-spec.md` which is the overall architecture and development ideas (open for tweaking)
+- `sprints/` which contains one markdown file per sprint with aligned frontend + backend scope
 
 ## Code Quality and Refactoring
 

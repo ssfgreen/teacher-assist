@@ -1,73 +1,73 @@
 # Teacher Assist
 
-Monorepo scaffold for the `teacher-assist` research prototype.
+Teacher Assist is a research-focused lesson planning assistant for teachers.
+It combines persistent workspace context, session memory, and an agentic chat loop so planning is transparent, iterative, and reviewable.
 
-This repository currently includes Sprint 0 through Sprint 5.1:
-- Monorepo workspaces (`packages/backend`, `packages/frontend`)
-- Bun + TypeScript setup
-- NestJS backend module architecture (controllers/services)
-- Biome lint/format setup
-- PostgreSQL Docker setup
-- Backend auth/chat/session APIs
-- Frontend login/chat/session UI
-- Streaming responses (OpenAI + Anthropic + mock)
-- PostgreSQL-backed teacher/session persistence across backend restarts
-- Workspace file APIs with per-teacher PostgreSQL persistence
-- System prompt assembly with injected workspace context (`soul.md`, profiles, class/curriculum files)
-- Frontend workspace tab, file editor, class selector, and context-used indicator
-- Agent loop orchestration (`runAgentLoop`) with tool-use turn cycling and safety limits
-- Tool registry + built-in tools (`read_file`, `write_file`, `str_replace`, `list_directory`, `read_skill`, `update_tasks`)
-- Skill manifest and tiered skill loading from `skills/`
-- Chat response message-chain transparency (tool messages + loaded skills metadata)
-- Frontend tool-call blocks and sidebar `Skills` section with active-skill highlighting
-- Frontend and backend critical-path automated tests
-- Streaming loop UI improvements (cancel, streamed tool-step visibility, typing cursor, auto-scroll)
-- Memory system (teacher/class memory files, memory APIs, prompt injection, memory-capture confirmation flow)
-- Session search tooling over persisted session text
-- Shared backend/frontend core chat/provider/token types via `packages/shared/types.ts`
-- Isolated frontend component playground (`/playground`) backed by raw Tailwind UI primitives
+## Quick Summary
 
-## OpenAI Tools and Skills Note
+- Monorepo with:
+  - `packages/backend`: NestJS + Bun API
+  - `packages/frontend`: React + Vite web app
+  - `packages/shared`: shared cross-package types
+- Persistent PostgreSQL storage for teachers, sessions, workspace files, and memory
+- Streaming chat with tool-use transparency and inspectable traces in session metadata
+- Workspace-first UX with editable markdown files (`soul.md`, teacher/class/curriculum context)
+- Memory capture flow with teacher confirmation (`awaiting_memory_capture` / `no_new_memory`)
 
-- The app currently uses provider SDK tool/function calling (OpenAI + Anthropic) for backend-defined tools in `packages/backend/src/tools/registry.ts`.
-- App "skills" are local markdown bundles in repo `skills/` loaded through the `read_skill` tool.
-- This is different from OpenAI hosted `tools-shell` Skills (`tools[].environment.skills`), which are not mounted in this backend today.
+## Core Functionality
+
+- Authentication and teacher-scoped data isolation
+- Session-based chat with provider/model selection and streaming responses
+- Agent loop with tool execution (`read_file`, `write_file`, `read_skill`, etc.)
+- Progressive skill loading from `skills/`
+- Workspace editor and class-aware context loading
+- Teacher/class memory read/write and memory-capture confirmation flow
+- Session search over persisted conversation content
+
+## Key Docs
+
+- Architecture overview: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- Critical user flows and verification targets: [CRITICAL_PATHS.md](./CRITICAL_PATHS.md)
+- Canonical sprint planning (frontend + backend aligned): [specifications/sprints/README.md](./specifications/sprints/README.md)
+- Product and development specs:
+  - [specifications/product-spec.md](./specifications/product-spec.md)
+  - [specifications/dev-spec.md](./specifications/dev-spec.md)
 
 ## Prerequisites
 
 - Bun `>=1.3`
-- Docker Desktop (or Docker Engine) for PostgreSQL
+- Docker Desktop (or Docker Engine)
 
-If `bun` is not on your shell path, you can run it directly via:
-`/Users/s2852430/.bun/bin/bun`
+## Getting Started from Scratch
 
-## Quick Start
+1. Clone and enter the repo.
 
-1. Install dependencies from repo root:
+```bash
+git clone <repo-url>
+cd teacher-assist
+```
+
+2. Install dependencies.
 
 ```bash
 bun install
 ```
 
-2. Start PostgreSQL:
+3. Start PostgreSQL.
 
 ```bash
 docker compose up -d
 ```
 
-3. (Optional) Create a root `.env` file to override database/provider settings. If omitted, backend defaults to:
+4. Create `.env` at repo root (optional but recommended).
+
+If omitted, backend defaults to:
 
 ```bash
 DATABASE_URL=postgres://teacher_assist:teacher_assist@localhost:5432/teacher_assist
 ```
 
-Example `.env`:
-
-```bash
-DATABASE_URL=postgres://teacher_assist:teacher_assist@localhost:5432/teacher_assist
-```
-
-4. Apply backend migrations (required on fresh machines):
+5. Run database migrations.
 
 ```bash
 cd packages/backend
@@ -75,188 +75,41 @@ bun run migrate
 cd ../..
 ```
 
-5. Verify lint passes:
-
-```bash
-bun run lint
-```
-
-6. Verify backend tests pass:
-
-```bash
-cd packages/backend
-bun test
-```
-
-7. Build frontend:
-
-```bash
-cd packages/frontend
-bun run build
-```
-
-8. Start backend API:
-
-```bash
-cd packages/backend
-bun run dev
-```
-
-Expected backend output pattern:
-`teacher-assist backend listening on http://localhost:3001`
-
-9. Start frontend dev server (new terminal):
-
-```bash
-cd packages/frontend
-bun run dev
-```
-
-## Verification Commands
-
-Run these from repository root unless noted.
-
-1. Full static + backend verification:
+6. Run baseline verification.
 
 ```bash
 bun run lint
 cd packages/backend && bun test
 cd ../frontend && bun run test
-bun run build
 cd ../..
 ```
 
-2. Start services for manual testing (use two terminals):
+7. Start backend (terminal 1).
 
 ```bash
-# Terminal 1
 bun run dev:backend
+```
 
-# Terminal 2
+8. Start frontend (terminal 2).
+
+```bash
 bun run dev:frontend
 ```
 
-Optional UI component isolation preview:
-
-```bash
-cd packages/frontend
-bun run dev:playground
-```
-
-3. Login credentials for local testing:
+9. Sign in with local test credentials.
 
 - Email: `teacher@example.com`
 - Password: `password123`
 
-4. Backend API smoke test with `curl`:
+## Useful Commands
 
-```bash
-# login and save cookie
-curl -i -c /tmp/teacher_assist.cookie \
-  -H "Content-Type: application/json" \
-  -d '{"email":"teacher@example.com","password":"password123"}' \
-  http://localhost:3001/api/auth/login
+- Lint everything: `bun run lint`
+- Backend tests: `cd packages/backend && bun test`
+- Frontend tests: `cd packages/frontend && bun run test`
+- Frontend build: `cd packages/frontend && bun run build`
+- Provider smoke test: `bun run smoke:providers`
 
-# check current user
-curl -i -b /tmp/teacher_assist.cookie http://localhost:3001/api/auth/me
+## Notes
 
-# create session
-curl -i -b /tmp/teacher_assist.cookie \
-  -H "Content-Type: application/json" \
-  -d '{"provider":"openai","model":"gpt-4o"}' \
-  http://localhost:3001/api/sessions
-
-# send chat message (replace SESSION_ID)
-curl -i -b /tmp/teacher_assist.cookie \
-  -H "Content-Type: application/json" \
-  -d '{"provider":"openai","model":"mock-openai","sessionId":"SESSION_ID","classRef":"3B","messages":[{"role":"user","content":"Plan a lesson on loops"}]}' \
-  http://localhost:3001/api/chat
-
-# list workspace tree
-curl -i -b /tmp/teacher_assist.cookie http://localhost:3001/api/workspace
-
-# update a class profile
-curl -i -b /tmp/teacher_assist.cookie \
-  -H "Content-Type: application/json" \
-  -X PUT \
-  -d '{"content":"# Class 3B\n- Subject: Computing Science"}' \
-  http://localhost:3001/api/workspace/classes/3B/CLASS.md
-```
-
-5. Real provider one-shot smoke check (streaming + log capture):
-
-```bash
-bun run smoke:providers
-```
-
-Optional env overrides:
-- `SMOKE_OPENAI_MODEL` (default: `gpt-5-nano-2025-08-07`)
-- `SMOKE_ANTHROPIC_MODEL` (default: `claude-haiku-4-5`)
-- `SMOKE_MAX_TOKENS` (default: `80`)
-
-Logs are written to:
-- `packages/backend/.data/smoke/providers-<timestamp>.json`
-
-## Verification Checklist
-
-- `bun install` completes without dependency errors
-- `bun run lint` exits with code `0`
-- `packages/backend` tests pass
-- `packages/frontend` tests pass
-- `packages/frontend` build passes
-- Backend starts on `localhost:3001`
-- Frontend starts on Vite default port and loads login screen
-- Login works with demo credentials
-- You can create/resume/delete sessions in the UI
-- Chat requests return assistant responses
-- Chat responses stream incrementally in the UI
-- Sessions persist after backend restart
-- Workspace tab shows seeded files (`soul.md`, `teacher.md`, `pedagogy.md`, `classes/`, `curriculum/`)
-- Workspace file edits save and reload correctly
-- Chat response contains workspace context metadata and UI indicator
-- Class selector sends `classRef` to backend
-- PostgreSQL container is healthy via `docker ps`
-
-## Sprint 3 Verification Checklist
-
-- `bun run lint` exits with code `0`
-- `cd packages/backend && bun test` passes
-- `cd packages/frontend && bun run test` passes
-- `GET /api/skills` returns seeded skill manifest for authenticated user
-- `POST /api/chat` with `model: "mock-agentic-skill"` returns tool messages in `messages`
-- `POST /api/chat` with `model: "mock-agentic-write"` writes `outputs/lesson-plan.md` through tool loop
-- `POST /api/chat` with `model: "mock-agentic-error"` returns tool error in chain and recovers with final assistant response
-- Frontend chat renders tool-call summary blocks and expandable args/result sections
-- Frontend chat renders structured assistant lesson sections as distinct cards
-- Frontend `Skills` sidebar section shows available skills, highlights active loaded skills, and opens rendered markdown in the main pane
-
-## Database Migrations
-
-Sprint 0 includes:
-- `packages/backend/db/migrations/001_teachers.sql`
-- `packages/backend/db/migrations/002_sessions.sql`
-- `packages/backend/db/migrations/003_workspace_files.sql`
-
-Run migrations with:
-
-```bash
-cd packages/backend
-bun run migrate
-```
-
-If you switch computers or recreate Docker volumes, rerun the migration command before starting the backend.
-
-## Project Structure
-
-- `packages/backend`: NestJS-on-Bun backend
-- `packages/frontend`: Vite + React + TS frontend scaffold
-- `packages/shared`: shared cross-package TypeScript types
-- `specifications/`: product and engineering specifications
-- `skills/`: skills
-- `workspace/`: seed markdown files and local artifacts
-
-## Current Limitations
-
-- Auth tokens/rate-limit counters are in-memory (not persisted across backend restarts)
-- Workspace editor now uses Milkdown (Crepe) for markdown editing
-- Full backend integration tests require PostgreSQL running locally (`docker compose up -d`) before `cd packages/backend && bun test`
+- Full backend integration tests require local PostgreSQL.
+- Auth tokens and rate-limit counters are in-memory.
