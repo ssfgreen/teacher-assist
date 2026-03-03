@@ -9,6 +9,9 @@ export interface TeacherProfile {
   id: string;
   email: string;
   name: string;
+  access?: {
+    traceViewer: boolean;
+  };
 }
 
 export type ChatMessage = SharedChatMessage;
@@ -119,6 +122,13 @@ export interface MemoryProposal {
 export interface SkillManifestItem {
   name: string;
   description: string;
+  maxTier?: 2 | 3;
+  tier3FileCount?: number;
+  tier3Files?: string[];
+  validation?: {
+    valid: boolean;
+    issues: string[];
+  };
 }
 
 export interface SkillFileResponse {
@@ -136,6 +146,7 @@ export interface ChatTraceStep {
 
 export interface ChatTrace {
   id: string;
+  sessionId?: string;
   createdAt: string;
   systemPrompt: string;
   estimatedPromptTokens: number;
@@ -147,4 +158,40 @@ export interface ChatTrace {
   };
   status: "success" | "error_max_turns" | "error_max_budget";
   steps: ChatTraceStep[];
+  spans?: ChatTraceSpan[];
+  summary?: {
+    toolCalls: number;
+    hookCalls: number;
+    skillCalls: number;
+  };
+}
+
+export type TraceSpanKind =
+  | "model"
+  | "tool"
+  | "subagent"
+  | "hook"
+  | "skill"
+  | "feedforward"
+  | "reflection"
+  | "adjudication";
+
+export interface ChatTraceSpan {
+  id: string;
+  kind: TraceSpanKind;
+  label: string;
+  startedAt: string;
+  endedAt: string;
+  status: "success" | "error" | "pending";
+  metadata?: Record<string, unknown>;
+}
+
+export interface TraceRecord extends ChatTrace {
+  session: {
+    id: string;
+    provider: Provider;
+    model: string;
+    classRef: string | null;
+    updatedAt: string;
+  };
 }

@@ -30,7 +30,11 @@ export class AuthController {
   async login(
     @Body() body: { email: string; password: string },
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ teacher: Omit<Teacher, "passwordHash"> }> {
+  ): Promise<{
+    teacher: Omit<Teacher, "passwordHash"> & {
+      access: { traceViewer: boolean };
+    };
+  }> {
     await this.authService.ensureDefaultTeacher();
 
     const result = await this.authService.login(body.email, body.password);
@@ -46,7 +50,12 @@ export class AuthController {
 
     response.setHeader("set-cookie", buildAuthSetCookie(result.token));
     return {
-      teacher: result.teacher,
+      teacher: {
+        ...result.teacher,
+        access: {
+          traceViewer: this.authService.canAccessTraceViewer(result.teacher),
+        },
+      },
     };
   }
 
@@ -60,7 +69,12 @@ export class AuthController {
       this.workspaceService.throwStorageError(error);
     }
 
-    return teacher;
+    return {
+      ...teacher,
+      access: {
+        traceViewer: this.authService.canAccessTraceViewer(teacher),
+      },
+    };
   }
 
   @Post("logout")

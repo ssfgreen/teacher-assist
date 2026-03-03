@@ -21,6 +21,7 @@ import { MODEL_OPTIONS } from "./features/chat/model-options";
 import { useChatSession } from "./features/chat/useChatSession";
 import MemoryCaptureCard from "./features/memory/MemoryCaptureCard";
 import MemoryTree from "./features/memory/MemoryTree";
+import TraceViewer from "./features/traces/TraceViewer";
 import WorkspaceSidebar from "./features/workspace/WorkspaceSidebar";
 import { collectFiles, findNodeByPath } from "./features/workspace/path-utils";
 import { useAuthStore } from "./stores/authStore";
@@ -254,8 +255,16 @@ export default function App() {
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(
     null,
   );
-  const [skillLoadingName, setSkillLoadingName] = useState<string | null>(null);
+  const [selectedSkillDocPathByName, setSelectedSkillDocPathByName] = useState<
+    Record<string, string>
+  >({});
+  const [skillLoadingTarget, setSkillLoadingTarget] = useState<string | null>(
+    null,
+  );
   const [skillContentByName, setSkillContentByName] = useState<
+    Record<string, string>
+  >({});
+  const [skillContentByTarget, setSkillContentByTarget] = useState<
     Record<string, string>
   >({});
   const [skillErrorByName, setSkillErrorByName] = useState<
@@ -268,6 +277,9 @@ export default function App() {
   const [selectedMemoryPath, setSelectedMemoryPath] = useState<string | null>(
     null,
   );
+  const [selectedTraceSessionId, setSelectedTraceSessionId] = useState<
+    string | null
+  >(null);
   const [sessionMenuOpenId, setSessionMenuOpenId] = useState<string | null>(
     null,
   );
@@ -420,6 +432,7 @@ export default function App() {
     closeWorkspaceFile();
     closeMemoryFile();
     setSelectedSkillName(null);
+    setSelectedTraceSessionId(null);
     setInspector(null);
     await selectSession(sessionId);
   };
@@ -447,31 +460,37 @@ export default function App() {
     }));
   };
 
-  const loadSkillContent = async (skillName: string) => {
-    if (skillContentByName[skillName]) {
+  const loadSkillContent = async (target: string) => {
+    if (skillContentByTarget[target]) {
       return;
     }
 
-    setSkillLoadingName(skillName);
+    setSkillLoadingTarget(target);
     try {
-      const loaded = await readSkill(skillName);
-      setSkillContentByName((current) => ({
+      const loaded = await readSkill(target);
+      setSkillContentByTarget((current) => ({
         ...current,
-        [skillName]: loaded.content,
+        [target]: loaded.content,
       }));
+      if (loaded.tier === 2) {
+        setSkillContentByName((current) => ({
+          ...current,
+          [target]: loaded.content,
+        }));
+      }
       setSkillErrorByName((current) => {
         const next = { ...current };
-        delete next[skillName];
+        delete next[target];
         return next;
       });
     } catch (error) {
       setSkillErrorByName((current) => ({
         ...current,
-        [skillName]:
+        [target]:
           error instanceof Error ? error.message : "Failed to load skill file",
       }));
     } finally {
-      setSkillLoadingName(null);
+      setSkillLoadingTarget(null);
     }
   };
 
@@ -479,6 +498,10 @@ export default function App() {
     closeWorkspaceFile();
     closeMemoryFile();
     setSelectedSkillName(skillName);
+    setSelectedSkillDocPathByName((current) => ({
+      ...current,
+      [skillName]: "SKILL.md",
+    }));
     void loadSkillContent(skillName);
   };
 
@@ -486,27 +509,38 @@ export default function App() {
     if (!skillName) {
       return;
     }
+    const target =
+      skillName.includes("/") || skillName.endsWith(".md")
+        ? skillName
+        : `${skillName}`;
+
     setInspector({
       source: "skill",
-      title: skillName,
-      content: skillContentByName[skillName] ?? "",
-      loading: !skillContentByName[skillName],
+      title: target,
+      content: skillContentByTarget[target] ?? "",
+      loading: !skillContentByTarget[target],
       error: null,
       renderMode: "markdown",
     });
 
-    if (skillContentByName[skillName]) {
+    if (skillContentByTarget[target]) {
       return;
     }
 
     try {
-      const loaded = await readSkill(skillName);
-      setSkillContentByName((current) => ({
+      const loaded = await readSkill(target);
+      setSkillContentByTarget((current) => ({
         ...current,
-        [skillName]: loaded.content,
+        [target]: loaded.content,
       }));
+      if (loaded.tier === 2) {
+        setSkillContentByName((current) => ({
+          ...current,
+          [target]: loaded.content,
+        }));
+      }
       setInspector((current) =>
-        current && current.source === "skill" && current.title === skillName
+        current && current.source === "skill" && current.title === target
           ? {
               ...current,
               content: loaded.content,
@@ -519,12 +553,82 @@ export default function App() {
       const message =
         error instanceof Error ? error.message : "Failed to load skill file";
       setInspector((current) =>
-        current && current.source === "skill" && current.title === skillName
+        current && current.source === "skill" && current.title === target
           ? { ...current, loading: false, error: message }
           : current,
       );
     }
   };
+
+  const inspectSkillDocument = async (skillName: string, href: string) => {
+    const trimmed = href.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      return;
+    }
+
+    const withoutQuery = trimmed.split("#")[0]?.split("?")[0] ?? "";
+    const sanitized = withoutQuery.replace(/^\.?\//, "").replace(/^\/+/, "");
+    if (!sanitized || sanitized.includes("..")) {
+      return;
+    }
+
+    const target = sanitized.includes("/")
+      ? sanitized
+      : `${skillName}/${sanitized}`;
+    const title = `skill doc: ${target}`;
+
+    setInspector({
+      source: "skill",
+      title,
+      content: "",
+      loading: true,
+      error: null,
+      renderMode: "markdown",
+    });
+
+    try {
+      const loaded = await readSkill(target);
+      setInspector((current) =>
+        current && current.source === "skill" && current.title === title
+          ? {
+              ...current,
+              content: loaded.content,
+              loading: false,
+              error: null,
+            }
+          : current,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load linked skill document";
+      setInspector((current) =>
+        current && current.source === "skill" && current.title === title
+          ? { ...current, loading: false, error: message }
+          : current,
+      );
+    }
+  };
+
+  const currentSkillManifest = useMemo(
+    () => skills.find((skill) => skill.name === selectedSkillName) ?? null,
+    [skills, selectedSkillName],
+  );
+  const currentSkillDocPath = selectedSkillName
+    ? (selectedSkillDocPathByName[selectedSkillName] ?? "SKILL.md")
+    : "SKILL.md";
+  const currentSkillTarget = selectedSkillName
+    ? currentSkillDocPath === "SKILL.md"
+      ? selectedSkillName
+      : `${selectedSkillName}/${currentSkillDocPath}`
+    : "";
+  const currentSkillContent = currentSkillTarget
+    ? (skillContentByTarget[currentSkillTarget] ??
+      (currentSkillDocPath === "SKILL.md" && selectedSkillName
+        ? skillContentByName[selectedSkillName]
+        : undefined))
+    : undefined;
 
   const inspectWorkspacePath = async (path: string) => {
     const virtualContent = virtualWorkspaceContextContent({
@@ -695,6 +799,51 @@ export default function App() {
     });
   };
 
+  const canViewTraces = teacher?.access?.traceViewer ?? false;
+
+  const inspectorPanel = inspector ? (
+    <aside
+      data-testid="right-inspector"
+      className="absolute inset-y-0 right-0 hidden w-[25rem] border-l border-paper-300 bg-surface-panel lg:block"
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex items-center justify-between border-b border-paper-300 px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-wide text-ink-700">
+              {inspector.source}
+            </p>
+            <p className="truncate text-sm font-semibold">{inspector.title}</p>
+          </div>
+          <button
+            className="rounded p-1 text-ink-700 transition hover:text-ink-900"
+            type="button"
+            aria-label="Close inspector"
+            onClick={() => setInspector(null)}
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {inspector.loading ? (
+            <p className="text-xs text-ink-700">Loading…</p>
+          ) : null}
+          {inspector.error ? (
+            <p className="text-xs text-danger-700">{inspector.error}</p>
+          ) : null}
+          {!inspector.loading && !inspector.error ? (
+            inspector.renderMode === "pre" ? (
+              <pre className="whitespace-pre-wrap text-xs leading-5">
+                {inspector.content}
+              </pre>
+            ) : (
+              <MarkdownRenderer content={inspector.content} />
+            )
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  ) : null;
+
   if (!teacher) {
     if (authLoading) {
       return <div className="p-8 text-center text-sm">Loading...</div>;
@@ -721,6 +870,7 @@ export default function App() {
                 closeWorkspaceFile();
                 closeMemoryFile();
                 setSelectedSkillName(null);
+                setSelectedTraceSessionId(null);
                 setInspector(null);
                 setFocusComposerToken((current) => current + 1);
                 void createNewSession();
@@ -871,6 +1021,21 @@ export default function App() {
                             {formatRelativeTime(session.updatedAt)}
                           </span>
                         </button>
+                        {canViewTraces ? (
+                          <button
+                            className="rounded border border-paper-300 px-1.5 py-0.5 text-[11px] text-ink-700 hover:border-accent-500"
+                            type="button"
+                            onClick={() => {
+                              closeWorkspaceFile();
+                              closeMemoryFile();
+                              setSelectedSkillName(null);
+                              setInspector(null);
+                              setSelectedTraceSessionId(session.id);
+                            }}
+                          >
+                            Traces
+                          </button>
+                        ) : null}
                         <div className="relative">
                           <button
                             className="rounded-md px-1.5 py-0.5 text-xs text-ink-700 opacity-0 transition group-hover:opacity-100"
@@ -1023,38 +1188,91 @@ export default function App() {
           </section>
         </div>
       ) : selectedSkillName ? (
-        <section className="mx-auto flex h-full w-full max-w-4xl flex-col rounded-[20px] border border-paper-200 bg-surface-panel p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="font-display text-xl">{selectedSkillName}</h2>
-            <button
-              className="rounded-lg border border-paper-300 px-2 py-1 text-xs"
-              type="button"
-              onClick={() => setSelectedSkillName(null)}
-            >
-              Back to chat
-            </button>
-          </div>
-          <div className="overflow-y-auto pr-1">
-            {skillLoadingName === selectedSkillName ? (
-              <p className="text-xs text-ink-700">Loading...</p>
-            ) : null}
-            {skillErrorByName[selectedSkillName] ? (
-              <p className="text-xs text-danger-700">
-                {skillErrorByName[selectedSkillName]}
-              </p>
-            ) : null}
-            {skillContentByName[selectedSkillName] ? (
-              <MarkdownRenderer
-                content={skillContentByName[selectedSkillName]}
-              />
-            ) : null}
-          </div>
-        </section>
+        <div className="relative flex h-full min-h-0">
+          <section
+            className={`mx-auto flex h-full w-full max-w-4xl flex-col rounded-[20px] border border-paper-200 bg-surface-panel p-4 transition-[padding] duration-200 ease-out ${inspector ? "lg:pr-[26rem]" : ""}`}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-display text-xl">{selectedSkillName}</h2>
+              <button
+                className="rounded-lg border border-paper-300 px-2 py-1 text-xs"
+                type="button"
+                onClick={() => setSelectedSkillName(null)}
+              >
+                Back to chat
+              </button>
+            </div>
+            <div className="mb-3 flex flex-wrap gap-1 overflow-x-auto pb-1">
+              <button
+                className={`rounded-full border px-3 py-1 text-xs ${currentSkillDocPath === "SKILL.md" ? "border-accent-500 bg-accent-100 text-accent-700" : "border-paper-300 text-ink-700 hover:border-paper-400"}`}
+                type="button"
+                onClick={() => {
+                  if (!selectedSkillName) {
+                    return;
+                  }
+                  setSelectedSkillDocPathByName((current) => ({
+                    ...current,
+                    [selectedSkillName]: "SKILL.md",
+                  }));
+                  void loadSkillContent(selectedSkillName);
+                }}
+              >
+                Overview
+              </button>
+              {(currentSkillManifest?.tier3Files ?? []).map((path) => (
+                <button
+                  key={path}
+                  className={`rounded-full border px-3 py-1 text-xs ${currentSkillDocPath === path ? "border-accent-500 bg-accent-100 text-accent-700" : "border-paper-300 text-ink-700 hover:border-paper-400"}`}
+                  type="button"
+                  onClick={() => {
+                    if (!selectedSkillName) {
+                      return;
+                    }
+                    setSelectedSkillDocPathByName((current) => ({
+                      ...current,
+                      [selectedSkillName]: path,
+                    }));
+                    void loadSkillContent(`${selectedSkillName}/${path}`);
+                  }}
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+            <div className="overflow-y-auto pr-1">
+              {skillLoadingTarget === currentSkillTarget ? (
+                <p className="text-xs text-ink-700">Loading...</p>
+              ) : null}
+              {currentSkillTarget && skillErrorByName[currentSkillTarget] ? (
+                <p className="text-xs text-danger-700">
+                  {skillErrorByName[currentSkillTarget]}
+                </p>
+              ) : null}
+              {currentSkillContent ? (
+                <MarkdownRenderer
+                  content={currentSkillContent}
+                  onLinkClick={(href) => {
+                    void inspectSkillDocument(selectedSkillName, href);
+                  }}
+                />
+              ) : null}
+            </div>
+          </section>
+          {inspectorPanel}
+        </div>
+      ) : selectedTraceSessionId ? (
+        <TraceViewer
+          sessionId={selectedTraceSessionId}
+          onBack={() => setSelectedTraceSessionId(null)}
+        />
       ) : (
         <div className="relative flex h-full min-h-0 flex-col">
           <MemoryCaptureCard
             sessionId={currentSession?.id ?? null}
-            onSubmitted={refreshSessions}
+            onSubmitted={async () => {
+              await refreshSessions();
+              await initialiseMemory();
+            }}
           />
           <InteractiveCard
             state={
@@ -1141,50 +1359,7 @@ export default function App() {
               <p className="mt-2 text-xs text-danger-700">{commandsError}</p>
             ) : null}
           </div>
-          {inspector ? (
-            <aside
-              data-testid="right-inspector"
-              className="absolute inset-y-0 right-0 hidden w-[25rem] border-l border-paper-300 bg-surface-panel lg:block"
-            >
-              <div className="flex h-full min-h-0 flex-col">
-                <div className="flex items-center justify-between border-b border-paper-300 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-wide text-ink-700">
-                      {inspector.source}
-                    </p>
-                    <p className="truncate text-sm font-semibold">
-                      {inspector.title}
-                    </p>
-                  </div>
-                  <button
-                    className="rounded p-1 text-ink-700 transition hover:text-ink-900"
-                    type="button"
-                    aria-label="Close inspector"
-                    onClick={() => setInspector(null)}
-                  >
-                    <PanelRightClose className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                  {inspector.loading ? (
-                    <p className="text-xs text-ink-700">Loading…</p>
-                  ) : null}
-                  {inspector.error ? (
-                    <p className="text-xs text-danger-700">{inspector.error}</p>
-                  ) : null}
-                  {!inspector.loading && !inspector.error ? (
-                    inspector.renderMode === "pre" ? (
-                      <pre className="whitespace-pre-wrap text-xs leading-5">
-                        {inspector.content}
-                      </pre>
-                    ) : (
-                      <MarkdownRenderer content={inspector.content} />
-                    )
-                  ) : null}
-                </div>
-              </div>
-            </aside>
-          ) : null}
+          {inspectorPanel}
         </div>
       )}
     </Shell>

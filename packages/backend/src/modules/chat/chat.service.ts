@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { Injectable } from "@nestjs/common";
 import type { Request, Response } from "express";
 
@@ -32,6 +30,11 @@ import { listToolDefinitions } from "../../tools/registry";
 import { buildSkillManifestText } from "../../tools/skills";
 import type { ChatMessage, ChatTrace, Provider, TokenUsage } from "../../types";
 import { loadWorkspaceContext } from "../../workspace";
+import {
+  appendCommandReviewSpans,
+  buildPendingCommandTrace,
+  buildTrace,
+} from "./trace-builder";
 
 export interface FeedforwardPayload {
   summary: string;
@@ -441,19 +444,12 @@ export class ChatService {
         totalTokens: 0,
         estimatedCostUsd: 0,
       };
-      const trace: ChatTrace = {
-        id: randomUUID(),
-        createdAt: new Date().toISOString(),
+      const trace = buildPendingCommandTrace({
+        sessionId: session.sessionId,
         systemPrompt,
         estimatedPromptTokens: estimatedTokens,
-        usage: emptyUsage,
-        status: "success",
-        memorySelectionSummary:
-          memoryContext.loadedPaths.length > 0
-            ? `Loaded memory: ${memoryContext.loadedPaths.join(", ")}`
-            : "No memory loaded.",
-        steps: [],
-      };
+        memoryContextLoaded: memoryContext.loadedPaths,
+      });
       const sessionRecord = await readSession(session.sessionId);
       if (!sessionRecord) {
         throwApiError(404, "Session not found");
@@ -1000,26 +996,20 @@ export class ChatService {
         .reverse()
         .find((message) => message.role === "assistant")?.content ?? "";
 
-    const trace: ChatTrace = {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
+    const trace = buildTrace({
+      sessionId: params.loop.sessionId,
+      provider: params.loop.provider,
+      model: params.loop.model,
       systemPrompt: params.loop.systemPrompt,
       estimatedPromptTokens: params.loop.estimatedTokens,
       usage: params.usage,
-      status: "success",
-      memorySelectionSummary:
-        params.loop.memoryContextLoaded.length > 0
-          ? `Loaded memory: ${params.loop.memoryContextLoaded.join(", ")}`
-          : "No memory loaded.",
-      steps: params.agentMessages
-        .filter((message) => message.role === "tool")
-        .map((message) => ({
-          toolName: message.toolName ?? "tool",
-          input: message.toolInput ?? {},
-          output: message.content,
-          isError: Boolean(message.toolError),
-        })),
-    };
+      memoryContextLoaded: params.loop.memoryContextLoaded,
+      requestMessages: params.loop.modelMessages,
+      agentMessages: params.agentMessages,
+      includeCommandHookSpan: Boolean(
+        params.commandHooksEnabled && params.loop.commandId,
+      ),
+    });
 
     const persisted = await appendSessionMessages(
       params.loop.sessionId,
@@ -1124,6 +1114,7 @@ export class ChatService {
       status: "awaiting_reflection",
       reflection,
       adjudication,
+      trace: appendCommandReviewSpans(finalPayload.trace),
     };
 
     pendingChatInteractions.set(params.loop.sessionId, {

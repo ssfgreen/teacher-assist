@@ -203,6 +203,69 @@ export function mockResponse(
     return normalize(`Great, I will target ${answer}.`, messages);
   }
 
+  if (model === "mock-agentic-subagent-parent") {
+    const delegated = messages.some(
+      (message) =>
+        message.role === "tool" && message.toolName === "spawn_subagent",
+    );
+
+    if (!delegated) {
+      return {
+        ...normalize("", messages),
+        toolCalls: [
+          {
+            id: "mock-subagent-1",
+            name: "spawn_subagent",
+            input: {
+              agent: "research-helper",
+              task: "Create two concise starter questions about loops.",
+              context: "S3 mixed ability class with one EAL learner.",
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      };
+    }
+
+    return normalize(
+      "Planner merged subagent output into final lesson draft.",
+      messages,
+    );
+  }
+
+  if (model === "mock-agentic-subagent-child") {
+    return normalize(
+      "Two starter questions drafted with EAL-friendly wording.",
+      messages,
+    );
+  }
+
+  if (model === "mock-agentic-subagent-depth") {
+    const attemptedDepth = messages.some(
+      (message) =>
+        message.role === "tool" && message.toolName === "spawn_subagent",
+    );
+
+    if (!attemptedDepth) {
+      return {
+        ...normalize("", messages),
+        toolCalls: [
+          {
+            id: "mock-subagent-depth-1",
+            name: "spawn_subagent",
+            input: {
+              agent: "research-helper",
+              task: "Attempt nested delegation",
+            },
+          },
+        ],
+        stopReason: "tool_use",
+      };
+    }
+
+    return normalize("Depth handling complete.", messages);
+  }
+
   return normalize(
     `[mock:${provider}/${model}] ${latestUserMessage(messages)}`,
     messages,

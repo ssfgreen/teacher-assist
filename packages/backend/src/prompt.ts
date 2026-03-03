@@ -88,4 +88,7 @@ Rules:
 - For pedagogy or lesson-design requests, call \`read_skill\` for relevant skills before finalising the response.
 - Use tool calls to load additional workspace files only when needed.
 - For class-targeted requests, prefer reading \`classes/{classRef}/CLASS.md\` before making class-specific claims.
+- Delegate with \`spawn_subagent\` only when a clearly bounded specialist sub-task would improve quality (for example critique, differentiation check, or resource variant generation).
+- Do not delegate simple synthesis or short edits that can be done directly in the current turn.
+- When a subagent returns, synthesise its summary into one coherent teacher-facing response.
 `;

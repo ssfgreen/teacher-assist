@@ -7,7 +7,7 @@
 - `packages/backend`: Auth, chat, sessions, workspace/memory APIs, prompt assembly, provider adapters, streaming API.
 - `packages/frontend`: Login/chat UI, session/sidebar panels, workspace + memory editor, model selection, streamed response rendering.
 
-The current implementation is Sprint 0 through Sprint 6 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, Sprint 5 memory + session-search flows, Sprint 5.1 preference-memory extraction/UI updates, and Sprint 6 command + interactive hook flows).
+The current implementation is Sprint 0 through Sprint 8 (including Sprint 3.5 layout refresh, Sprint 4 full-loop streaming UX, Sprint 5 memory + session-search flows, Sprint 5.1 preference-memory extraction/UI updates, Sprint 6 command + interactive hook flows, Sprint 7 trace viewer + trace APIs, and Sprint 8 foreground-first subagent delegation).
 
 Shared cross-package types live in `packages/shared/types.ts` and are consumed by both backend and frontend type modules.
 
@@ -21,6 +21,7 @@ Database access is integrated with TypeORM (`@nestjs/typeorm`), with explicit en
 - `SessionsController` / `SessionsService`
 - `SkillsController` / `SkillsService`
 - `MemoryController` / `MemoryService`
+- `TracesController` / `TracesService`
 - `WorkspaceController` / `WorkspaceService`
 
 ### Auth
@@ -82,6 +83,7 @@ Agent loop behavior:
 - Safety limits enforced: `maxTurns` and `maxBudgetUsd`.
 - Tool results are stored as `role: "tool"` messages and persisted to sessions.
 - `ask_user_question` is a first-class tool; the loop pauses with `awaiting_user_question` and resumes via `POST /api/chat/question-response`.
+- `spawn_subagent` is a first-class tool handled in-loop; child runs resolve from `agents/*.md`, execute in isolated context, and are depth capped.
 - For class-targeted prompts, system instructions tell the model to prefer reading `classes/{classRef}/CLASS.md` before making class-specific claims (without hard-enforcing a tool call).
 - Context is maintained by an explicit runtime context state (history, tool lifecycle, task progress, feedback, summary metrics).
 - Loop resilience controls prevent unproductive cycles:
@@ -105,6 +107,7 @@ Real model calls require provider API keys; missing keys return explicit config 
   - `POST /api/sessions`
   - `GET /api/sessions`
   - `GET /api/sessions/:id`
+  - `GET /api/sessions/:id/traces`
   - `PUT /api/sessions/:id`
   - `DELETE /api/sessions/:id`
 - Session ownership is enforced per teacher.
@@ -114,6 +117,24 @@ Real model calls require provider API keys; missing keys return explicit config 
   - `contextHistory`
   - `memoryContextHistory`
   - `activeSkills`
+- Sprint 7 trace DTO now includes `sessionId`, span timeline (`spans`), and summary counts (`summary`) so frontend filtering/metrics are stable.
+
+### Traces
+
+- Endpoints:
+  - `GET /api/traces`
+  - `GET /api/traces/:id`
+  - `GET /api/sessions/:id/traces`
+- Access is gated to allow-listed research/developer emails via auth metadata `access.traceViewer`.
+- Trace spans cover:
+  - `model`
+- `tool`
+- `subagent`
+- `hook`
+  - `skill`
+  - `feedforward`
+  - `reflection`
+  - `adjudication`
 
 Persistence strategy:
 
@@ -130,6 +151,9 @@ Persistence strategy:
   - `pedagogy.md`
   - `classes/README.md`
   - `curriculum/README.md`
+  - `curriculum/computing-science.md`
+  - `curriculum/literacy.md`
+  - `curriculum/evidence-check.md`
 - Class profiles are expected at `classes/{classRef}/CLASS.md`.
 - Endpoints:
   - `GET /api/workspace`
@@ -163,6 +187,7 @@ Persistence strategy:
 - Skill references can be expanded recursively with depth and circular-reference guards.
 - Endpoint:
   - `GET /api/skills` (authenticated) returns manifest for the frontend sidebar `Skills` section.
+- Skill manifest now includes tier metadata (`maxTier`, `tier3FileCount`) and validation status (`validation.valid`, `validation.issues`).
 
 ### Session Search
 
@@ -192,6 +217,7 @@ Single-page React app with Zustand state stores.
 
 - Login/logout with auth bootstrap (`/api/auth/me`).
 - Session list, create, resume, delete.
+- Session trace viewer entrypoint from each session card (for authorized users).
 - Full-height, resizable sidebar (default ~20%, draggable) with unified collapsible sections for workspace, sessions, skills, and memory.
 - Sidebar includes global workspace tree controls (`Open all folders` / `Close all folders`) and logout anchored at the bottom-left.
 - Clicking a workspace markdown file opens the workspace markdown editor in the main pane, with autosave + manual save.
@@ -200,6 +226,7 @@ Single-page React app with Zustand state stores.
   - Creates in-progress assistant bubble.
   - Appends streamed deltas live.
   - Appends streamed tool-step messages in-order.
+  - Renders delegated subagent steps as dedicated inline blocks with collapsible task/steps/result sections.
   - Finalizes on `done` event.
   - Renders sectioned assistant outputs (`## Starter`, `## Main Activity`, `## Plenary`) as distinct section cards.
   - Composer action button is inline (bottom-right): send by default, stop during active generation.
@@ -216,6 +243,8 @@ Single-page React app with Zustand state stores.
   - AskUserQuestion (option buttons + optional free text)
 - Context indicator showing which workspace files were used for the latest response.
 - Context indicator separates workspace context from memory context.
+- Embedded activity indicator in chat layout shows planner/subagent activity state.
+- Dedicated trace viewer supports span filtering, expansion, and summary metrics (tokens, cost, tool calls, hooks).
 - Memory-capture card allows confirm/edit/dismiss decisions and bulk actions after each loop.
 - Frontend component-isolation workflow is available at `/playground` using the raw Tailwind `components/ui` primitives.
 
@@ -226,6 +255,7 @@ Single-page React app with Zustand state stores.
 - `api/chat.ts` (includes SSE parser for stream mode)
 - `api/workspace.ts`
 - `api/memory.ts`
+- `api/traces.ts`
 
 ## Testing Strategy
 

@@ -2,8 +2,8 @@
 
 ## Alignment Status
 
-- Frontend: Implemented
-- Backend: No planned changes
+- [x] Frontend: Implemented
+- [x] Backend: No planned changes
 
 ## Goal
 
@@ -11,21 +11,21 @@ Adopt a full-height, workspace-first interface with lower-friction chat controls
 
 ## Frontend Scope
 
-- Remove top header; use full-height sidebar + main workspace
-- Move provider/model/class controls under composer
-- Inline send/stop control and auto-resizing composer
-- Sidebar bulk folder expand/collapse controls
-- Theme token cleanup and layout consistency pass
+- [x] Remove top header; use full-height sidebar + main workspace
+- [x] Move provider/model/class controls under composer
+- [x] Inline send/stop control and auto-resizing composer
+- [x] Sidebar bulk folder expand/collapse controls
+- [x] Theme token cleanup and layout consistency pass
 
 ## Backend Scope
 
-- No endpoint/runtime changes
+- [x] No endpoint/runtime changes
 
 ## Shared Contracts
 
-- Existing chat/session/workspace APIs unchanged
+- [x] Existing chat/session/workspace APIs unchanged
 
 ## Test and Verification
 
-- Frontend tests for moved controls and stream stop behavior
-- Workspace tree expansion state regression tests
+- [x] Frontend tests for moved controls and stream stop behavior
+- [x] Workspace tree expansion state regression tests

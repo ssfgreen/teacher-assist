@@ -105,6 +105,25 @@ cd ../backend && bun test
     - `shows feedforward card and submits confirm response`
     - `renders ask-user-question card and submits selected option`
 
+### 9. Trace viewer workflow (Sprint 7)
+
+- Why critical:
+  - Research/debug visibility now depends on dedicated trace browsing, filtering, and expansion from historical sessions.
+- Tests:
+  - `packages/frontend/src/app.traces.test.tsx`
+    - `opens session trace viewer from sessions list`
+    - `filters and expands trace spans`
+
+### 10. Subagent delegation transparency (Sprint 8)
+
+- Why critical:
+  - Delegation must remain visible and inspectable inline so teachers can follow planner orchestration decisions.
+  - Expand/collapse detail behavior is required for readable but transparent delegation output.
+- Tests:
+  - `packages/frontend/src/app.auth-chat.test.tsx`
+    - `renders delegation block for spawn_subagent tool events`
+    - `supports expand/collapse within delegation details`
+
 ## Backend Critical Paths
 
 ### 1. Auth guard and session lifecycle
@@ -258,6 +277,16 @@ cd ../backend && bun test
 
 - Why critical:
   - Command-driven UX is the Sprint 6 entrypoint and must remain discoverable/wired.
+
+### 16. Trace API contract and span integrity (Sprint 7)
+
+- Why critical:
+  - Frontend trace viewer depends on stable DTO shape and accurate session correlation.
+- Tests:
+  - `packages/backend/tests/server.integration.test.ts`
+    - `lists traces and supports trace lookup endpoints`
+  - `packages/backend/tests/skills.test.ts`
+    - `builds manifest from skills directory`
   - Invalid command routing must fail fast to avoid silent prompt drift.
 - Tests:
   - `packages/backend/tests/server.integration.test.ts`
@@ -272,6 +301,18 @@ cd ../backend && bun test
     - `pauses on ask_user_question and returns question payload`
   - `packages/backend/tests/tools.registry.test.ts`
     - `generates provider tool schemas` (includes `ask_user_question` schema contract)
+
+### 17. Subagent execution isolation and rollups (Sprint 8)
+
+- Why critical:
+  - Delegated runs must stay bounded and synchronous in v1, while preserving accurate usage/cost totals and trace observability.
+- Tests:
+  - `packages/backend/src/agent.subagent.test.ts`
+    - `completes planner -> subagent -> planner chain and rolls up usage`
+    - `enforces delegation depth cap`
+    - `blocks subagent delegation in child execution contexts`
+  - `packages/backend/src/modules/chat/trace-builder.subagent.test.ts`
+    - `adds subagent child span metadata for spawn_subagent tool calls`
 
 ## Notes
 

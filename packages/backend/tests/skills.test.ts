@@ -18,6 +18,21 @@ describe("skills infrastructure", () => {
         skill.description.toLowerCase().includes("lesson"),
       ),
     ).toBe(true);
+    expect(skills.some((skill) => skill.maxTier >= 2)).toBe(true);
+    expect(
+      skills.some(
+        (skill) =>
+          skill.name === "backward-design" &&
+          skill.tier3Files.includes("examples.md"),
+      ),
+    ).toBe(true);
+    expect(
+      skills.every(
+        (skill) =>
+          typeof skill.validation.valid === "boolean" &&
+          Array.isArray(skill.validation.issues),
+      ),
+    ).toBe(true);
   });
 
   it("reads tier 2 and tier 3 skill content", () => {

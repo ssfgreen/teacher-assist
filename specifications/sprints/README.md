@@ -41,3 +41,9 @@ Each file combines frontend and backend scope for the same sprint, including sha
 
 Use this folder for sprint planning and review.
 `specifications/frontend.md` and `specifications/backend.md` were removed to avoid duplication; all sprint scope lives only in `specifications/sprints/*.md`.
+
+## Checklist Convention
+
+- Use `- [x]` for completed items.
+- Use `- [ ]` for incomplete/planned items.
+- Update checklist items in-place as work lands so sprint status remains current.

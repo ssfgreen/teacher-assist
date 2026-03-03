@@ -2,8 +2,8 @@
 
 ## Alignment Status
 
-- Frontend: Implemented
-- Backend: Partially implemented
+- [x] Frontend: Implemented
+- [ ] Backend: Partially implemented
 
 ## Goal
 
@@ -11,25 +11,25 @@ Promote only durable, novel memory with category-aware UX and a silent default p
 
 ## Frontend Scope
 
-- Category-grouped proposals: `personal`, `pedagogical`, `class`
-- Evidence snippets per proposal
-- Silent `no_new_memory` handling (no interruption)
-- Category-aware feedforward memory presentation
+- [x] Category-grouped proposals: `personal`, `pedagogical`, `class`
+- [x] Evidence snippets per proposal
+- [x] Silent `no_new_memory` handling (no interruption)
+- [x] Category-aware feedforward memory presentation
 
 ## Backend Scope
 
-- Structured extraction and novelty gate before proposals
-- `status: 'no_new_memory'` when candidates are empty
-- Categorized proposal model aligned to UI
-- Outstanding: extraction precision/dismissal metrics in traces
+- [x] Structured extraction and novelty gate before proposals
+- [x] `status: 'no_new_memory'` when candidates are empty
+- [x] Categorized proposal model aligned to UI
+- [ ] Outstanding: extraction precision/dismissal metrics in traces
 
 ## Shared Contracts
 
-- Chat statuses: `success`, `awaiting_memory_capture`, `no_new_memory`
-- Proposal payload includes category/scope/evidence fields
+- [x] Chat statuses: `success`, `awaiting_memory_capture`, `no_new_memory`
+- [x] Proposal payload includes category/scope/evidence fields
 
 ## Test and Verification
 
-- Frontend category rendering and silent-path tests
-- Backend novelty and categorization tests
-- Integration for proposal-confirm-write lifecycle
+- [x] Frontend category rendering and silent-path tests
+- [x] Backend novelty and categorization tests
+- [x] Integration for proposal-confirm-write lifecycle

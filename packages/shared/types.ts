@@ -8,6 +8,7 @@ export interface ChatMessage {
   toolInput?: Record<string, unknown>;
   toolError?: boolean;
   toolCacheHit?: boolean;
+  toolMetadata?: Record<string, unknown>;
 }
 
 export interface TokenUsage {

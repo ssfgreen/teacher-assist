@@ -2,8 +2,8 @@
 
 ## Alignment Status
 
-- Frontend: Implemented
-- Backend: Implemented
+- [x] Frontend: Implemented
+- [x] Backend: Implemented
 
 ## Goal
 
@@ -11,26 +11,26 @@ Expose the agent loop transparently: tool use, skill loading, and message-chain 
 
 ## Frontend Scope
 
-- Unified chronological timeline for user/tool/assistant events
-- Collapsible tool-step summaries and detail expansion
-- Sidebar skills section with active-skill highlighting
-- Inspector panel for skill/context/prompt/raw-response inspection
+- [x] Unified chronological timeline for user/tool/assistant events
+- [x] Collapsible tool-step summaries and detail expansion
+- [x] Sidebar skills section with active-skill highlighting
+- [x] Inspector panel for skill/context/prompt/raw-response inspection
 
 ## Backend Scope
 
-- `runAgentLoop` with safety limits and tool dispatch
-- Tool registry and built-in tools (`read_file`, `write_file`, `str_replace`, `list_directory`, `read_skill`, `update_tasks`)
-- Tiered skills discovery and loading
-- `GET /api/skills` manifest endpoint
-- Chat response includes full message chain and loaded-skill metadata
+- [x] `runAgentLoop` with safety limits and tool dispatch
+- [x] Tool registry and built-in tools (`read_file`, `write_file`, `str_replace`, `list_directory`, `read_skill`, `update_tasks`)
+- [x] Tiered skills discovery and loading
+- [x] `GET /api/skills` manifest endpoint
+- [x] Chat response includes full message chain and loaded-skill metadata
 
 ## Shared Contracts
 
-- `POST /api/chat` returns `messages`, `skillsLoaded`, trace metadata
-- Tool errors returned in-chain for model recovery
+- [x] `POST /api/chat` returns `messages`, `skillsLoaded`, trace metadata
+- [x] Tool errors returned in-chain for model recovery
 
 ## Test and Verification
 
-- Frontend timeline ordering/rendering tests
-- Backend loop/skills/registry tests
-- Integration tests for tool-chain chat responses
+- [x] Frontend timeline ordering/rendering tests
+- [x] Backend loop/skills/registry tests
+- [x] Integration tests for tool-chain chat responses

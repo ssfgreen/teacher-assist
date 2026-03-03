@@ -197,6 +197,162 @@ describe("App auth and chat", () => {
     await screen.findByText("Hello world");
   });
 
+  it("renders delegation block for spawn_subagent tool events", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    vi.mocked(chatApi.sendChatStream).mockResolvedValueOnce({
+      sessionId: "s1",
+      messages: [
+        { role: "user", content: "Plan loops" },
+        {
+          role: "tool",
+          toolName: "spawn_subagent",
+          toolInput: {
+            agent: "research-helper",
+            task: "Create starter questions",
+          },
+          toolMetadata: {
+            agent: "research-helper",
+            task: "Create starter questions",
+            summary: "Two questions drafted.",
+            status: "success",
+            steps: [{ tool: "read_skill", status: "success", output: "ok" }],
+          },
+          content: JSON.stringify({
+            agent: "research-helper",
+            task: "Create starter questions",
+            summary: "Two questions drafted.",
+            status: "success",
+            steps: [{ tool: "read_skill", status: "success", output: "ok" }],
+          }),
+        },
+        { role: "assistant", content: "Merged output." },
+      ],
+      skillsLoaded: [],
+      status: "success",
+      trace: {
+        id: "trace-subagent-render",
+        createdAt: "2026-03-03T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md"],
+      memoryContextLoaded: ["MEMORY.md"],
+      response: {
+        content: "Merged output.",
+        toolCalls: [],
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    const [delegationSummary] = await screen.findAllByText(
+      /delegated to research-helper/i,
+    );
+    expect(delegationSummary).toBeDefined();
+    await screen.findByText(/last activity: delegated to research-helper/i);
+  });
+
+  it("supports expand/collapse within delegation details", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    vi.mocked(chatApi.sendChatStream).mockResolvedValueOnce({
+      sessionId: "s1",
+      messages: [
+        { role: "user", content: "Plan loops" },
+        {
+          role: "tool",
+          toolName: "spawn_subagent",
+          toolInput: {
+            agent: "research-helper",
+            task: "Create starter questions",
+          },
+          content: JSON.stringify({
+            agent: "research-helper",
+            task: "Create starter questions",
+            summary: "Two questions drafted.",
+            status: "success",
+            steps: [{ tool: "read_skill", status: "success", output: "ok" }],
+          }),
+        },
+        { role: "assistant", content: "Merged output." },
+      ],
+      skillsLoaded: [],
+      status: "success",
+      trace: {
+        id: "trace-subagent-collapse",
+        createdAt: "2026-03-03T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md"],
+      memoryContextLoaded: ["MEMORY.md"],
+      response: {
+        content: "Merged output.",
+        toolCalls: [],
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          totalTokens: 3,
+          estimatedCostUsd: 0.000006,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    const [delegationSummary] = await screen.findAllByText(
+      /delegated to research-helper/i,
+    );
+    const outerDetails = delegationSummary.closest("details");
+    expect(outerDetails).not.toHaveAttribute("open");
+    await user.click(delegationSummary);
+    expect(outerDetails).toHaveAttribute("open");
+
+    const taskSummary = screen.getByText("Task");
+    const taskDetails = taskSummary.closest("details");
+    expect(taskDetails).not.toHaveAttribute("open");
+    await user.click(taskSummary);
+    expect(taskDetails).toHaveAttribute("open");
+    await screen.findByText("Create starter questions");
+  });
+
   it("uses selected provider and model for chat requests", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -562,6 +718,24 @@ describe("App auth and chat", () => {
   });
 
   it("loads full skill file from the skills section", async () => {
+    vi.mocked(skillsApi.readSkill).mockImplementation(async (target) => {
+      if (target === "backward-design") {
+        return {
+          target,
+          tier: 2,
+          content: "# Backward Design\n\nSkill file content.",
+        };
+      }
+      if (target === "backward-design/examples.md") {
+        return {
+          target,
+          tier: 3,
+          content: "# Backward Design Example\n\nTier 3 content.",
+        };
+      }
+      throw new Error("Skill file not found");
+    });
+
     const user = userEvent.setup();
     render(<App />);
 
@@ -576,6 +750,52 @@ describe("App auth and chat", () => {
       expect(skillsApi.readSkill).toHaveBeenCalledWith("backward-design");
     });
     await screen.findByText(/Backward Design/i);
+    await user.click(screen.getByRole("button", { name: "examples.md" }));
+    await waitFor(() => {
+      expect(skillsApi.readSkill).toHaveBeenCalledWith(
+        "backward-design/examples.md",
+      );
+    });
+    await screen.findByText(/Tier 3 content/i);
+  });
+
+  it("opens linked skill documents in the right inspector", async () => {
+    vi.mocked(skillsApi.readSkill).mockImplementation(async (target) => {
+      if (target === "backward-design") {
+        return {
+          target,
+          tier: 2,
+          content: "# Backward Design\n\nSee [examples](examples.md).",
+        };
+      }
+      if (target === "backward-design/examples.md") {
+        return {
+          target,
+          tier: 3,
+          content: "# Examples\n\nWorked example content.",
+        };
+      }
+      throw new Error("Skill file not found");
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    await user.click(screen.getByRole("button", { name: "Skills" }));
+    await user.click(screen.getByText("backward-design"));
+    await user.click(screen.getByRole("link", { name: "examples" }));
+
+    await waitFor(() => {
+      expect(skillsApi.readSkill).toHaveBeenCalledWith(
+        "backward-design/examples.md",
+      );
+    });
+    await screen.findByTestId("right-inspector");
+    await screen.findByText("Worked example content.");
   });
 
   it("collapses and expands sidebar sections from their headers", async () => {

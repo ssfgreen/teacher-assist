@@ -2,8 +2,8 @@
 
 ## Alignment Status
 
-- Frontend: Planned (reordered from prior frontend Sprint 9)
-- Backend: Planned (reordered from prior backend Sprint 9)
+- [x] Frontend: Completed
+- [x] Backend: Completed
 
 ## Goal
 
@@ -11,30 +11,36 @@ Make traces first-class for research and debugging, while expanding authored ski
 
 ## Frontend Scope
 
-- Trace viewer entry point from sessions
-- Trace timeline with span expansion and filtering
-- Trace summary metrics (tokens/cost/tool calls/hooks)
-- Research/developer access gating
-- Skills panel enhancements for tier visibility and readability
+- [x] Trace viewer entry point from sessions
+- [x] Trace timeline with span expansion and filtering
+- [x] Trace summary metrics (tokens/cost/tool calls/hooks)
+- [x] Research/developer access gating
+- [x] Skills panel enhancements for tier visibility and readability
 
 ## Backend Scope
 
-- Trace persistence and APIs:
-  - `GET /api/traces`
-  - `GET /api/traces/:id`
-  - `GET /api/sessions/:id/traces`
-- Span schema coverage for model/tool/hook/skill/feedforward/reflection/adjudication
-- Full pedagogical skill authoring and validation
-- Curriculum corpus population and evidence-check compatibility
+- [x] Trace persistence and APIs:
+  - [x] `GET /api/traces`
+  - [x] `GET /api/traces/:id`
+  - [x] `GET /api/sessions/:id/traces`
+- [x] Span schema coverage for model/tool/hook/skill/feedforward/reflection/adjudication
+- [x] Full pedagogical skill authoring and validation
+- [x] Curriculum corpus population and evidence-check compatibility
 
 ## Shared Contracts
 
-- Stable trace DTO for frontend rendering and filtering
-- Session-to-trace correlation for reopening historical runs
-- Skill metadata fields kept consistent between `GET /api/skills` and trace spans
+- [x] Stable trace DTO for frontend rendering and filtering
+- [x] Session-to-trace correlation for reopening historical runs
+- [x] Skill metadata fields kept consistent between `GET /api/skills` and trace spans
 
 ## Test and Verification
 
-- Frontend trace viewer tests (load/filter/expand/summaries)
-- Backend trace query and span integrity tests
-- Integration tests ensuring hook and skill events appear in traces
+- [x] Frontend trace viewer tests (load/filter/expand/summaries)
+- [x] Backend trace query and span integrity tests
+- [x] Integration tests ensuring hook and skill events appear in traces
+
+## Delivered Notes
+
+- Added trace-viewer access gating via authenticated teacher access metadata (`access.traceViewer`) and backend allow-list enforcement.
+- Added richer trace schema (`spans`, `summary`, `sessionId`) with model/tool/hook/skill/feedforward/reflection/adjudication coverage.
+- Added curriculum starter corpus files including `curriculum/evidence-check.md` for evidence-check aligned authoring.

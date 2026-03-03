@@ -7,6 +7,36 @@ interface SkillIndexItem extends SkillSummary {
   directory: string;
 }
 
+function collectTier3Files(
+  baseDirectory: string,
+  currentDirectory = baseDirectory,
+): string[] {
+  const entries = readdirSync(currentDirectory);
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const fullPath = resolve(currentDirectory, entry);
+    const stats = statSync(fullPath);
+
+    if (stats.isDirectory()) {
+      files.push(...collectTier3Files(baseDirectory, fullPath));
+      continue;
+    }
+
+    if (!stats.isFile()) {
+      continue;
+    }
+
+    const relative = fullPath.slice(baseDirectory.length + 1);
+    if (relative.toLowerCase() === "skill.md") {
+      continue;
+    }
+    files.push(relative);
+  }
+
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
 function resolveSkillsRoot(): string {
   const candidates = [
     resolve(process.cwd(), "skills"),
@@ -59,9 +89,28 @@ function loadSkillsIndex(): SkillIndexItem[] {
     }
 
     const content = readFileSync(skillPath, "utf8");
+    const tier3Files = collectTier3Files(fullDirectory);
+    const tier3FileCount = tier3Files.length;
+    const issues: string[] = [];
+    if (!parseName(content)) {
+      issues.push("Missing frontmatter name");
+    }
+    if (parseDescription(content) === "No description provided.") {
+      issues.push("Missing frontmatter description");
+    }
+    if (!content.includes("##")) {
+      issues.push("Missing section headings");
+    }
     entries.push({
       name: parseName(content) || directory,
       description: parseDescription(content),
+      maxTier: tier3FileCount > 0 ? 3 : 2,
+      tier3FileCount,
+      tier3Files,
+      validation: {
+        valid: issues.length === 0,
+        issues,
+      },
       directory: fullDirectory,
     });
   }
@@ -92,6 +141,10 @@ export function listSkillsManifest(): SkillSummary[] {
   return ensureSkills().map((skill) => ({
     name: skill.name,
     description: skill.description,
+    maxTier: skill.maxTier,
+    tier3FileCount: skill.tier3FileCount,
+    tier3Files: skill.tier3Files,
+    validation: skill.validation,
   }));
 }
 

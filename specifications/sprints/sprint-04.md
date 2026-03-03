@@ -2,8 +2,8 @@
 
 ## Alignment Status
 
-- Frontend: Implemented
-- Backend: Implemented
+- [x] Frontend: Implemented
+- [x] Backend: Implemented
 
 ## Goal
 
@@ -11,23 +11,23 @@ Deliver reliable token streaming through the full loop with clear lifecycle feed
 
 ## Frontend Scope
 
-- Token-by-token assistant rendering
-- Typing/cursor indicator and smooth autoscroll
-- Inline stop control to abort in-flight generation
-- Streamed tool-step visibility in timeline
+- [x] Token-by-token assistant rendering
+- [x] Typing/cursor indicator and smooth autoscroll
+- [x] Inline stop control to abort in-flight generation
+- [x] Streamed tool-step visibility in timeline
 
 ## Backend Scope
 
-- SSE streaming in `POST /api/chat` with ordered events
-- Stream events include `start`, `delta`, `message`, `ping`, `done`, `error`
-- Streaming resilience for long-running requests and disconnect handling
+- [x] SSE streaming in `POST /api/chat` with ordered events
+- [x] Stream events include `start`, `delta`, `message`, `ping`, `done`, `error`
+- [x] Streaming resilience for long-running requests and disconnect handling
 
 ## Shared Contracts
 
-- Stable SSE event contract consumed by frontend parser
-- `done` event includes full non-stream-equivalent payload
+- [x] Stable SSE event contract consumed by frontend parser
+- [x] `done` event includes full non-stream-equivalent payload
 
 ## Test and Verification
 
-- Frontend stream parser and UI state tests
-- Backend stream contract integration tests
+- [x] Frontend stream parser and UI state tests
+- [x] Backend stream contract integration tests

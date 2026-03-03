@@ -8,12 +8,17 @@ import {
   seedDefaultTeacher,
 } from "../../auth";
 import { throwApiError } from "../../common/api-error";
+import { resolveTraceViewerAllowedEmails } from "../../config";
 import type { Teacher } from "../../types";
 
 export type AuthenticatedTeacher = Omit<Teacher, "passwordHash">;
 
 @Injectable()
 export class AuthService {
+  private readonly traceViewerAllowedEmails = new Set(
+    resolveTraceViewerAllowedEmails(),
+  );
+
   async ensureDefaultTeacher(): Promise<void> {
     await seedDefaultTeacher();
   }
@@ -42,5 +47,15 @@ export class AuthService {
 
   logout(request: Request): void {
     logoutFromCookieHeader(request.headers.cookie ?? "");
+  }
+
+  canAccessTraceViewer(teacher: { email: string }): boolean {
+    return this.traceViewerAllowedEmails.has(teacher.email.toLowerCase());
+  }
+
+  assertCanAccessTraceViewer(teacher: { email: string }): void {
+    if (!this.canAccessTraceViewer(teacher)) {
+      throwApiError(403, "Trace viewer access is restricted");
+    }
   }
 }

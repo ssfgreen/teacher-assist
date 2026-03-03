@@ -5,6 +5,7 @@ import {
   dispatchToolCall,
   listToolDefinitions,
 } from "./tools/registry";
+import { readSubagentDefinition } from "./tools/subagents";
 import type { ChatMessage, Provider, TokenUsage } from "./types";
 
 export type AgentStatus =
@@ -45,6 +46,11 @@ interface RunAgentLoopParams {
     maxTurns?: number;
     maxBudgetUsd?: number;
     hooks?: HookRegistry;
+    delegation?: {
+      enabled?: boolean;
+      depth?: number;
+      maxDepth?: number;
+    };
   };
 }
 
@@ -53,6 +59,12 @@ interface ToolExecutionResult {
   output: string;
   isError: boolean;
   cacheHit: boolean;
+}
+
+interface SubagentInvocationInput {
+  agent: string;
+  task: string;
+  context?: string;
 }
 
 const READ_ONCE_TOOLS = new Set([
@@ -209,11 +221,35 @@ function toQuestionPayload(params: {
   };
 }
 
+function parseSubagentInvocationInput(
+  input: Record<string, unknown>,
+): SubagentInvocationInput {
+  const agent = typeof input.agent === "string" ? input.agent.trim() : "";
+  const task = typeof input.task === "string" ? input.task.trim() : "";
+  const context = typeof input.context === "string" ? input.context.trim() : "";
+
+  if (!agent) {
+    throw new Error("spawn_subagent requires agent");
+  }
+  if (!task) {
+    throw new Error("spawn_subagent requires task");
+  }
+
+  return {
+    agent,
+    task,
+    context: context || undefined,
+  };
+}
+
 export async function runAgentLoop(
   params: RunAgentLoopParams,
 ): Promise<AgentResult> {
   const maxTurns = params.options?.maxTurns ?? 25;
   const maxBudgetUsd = params.options?.maxBudgetUsd ?? Number.POSITIVE_INFINITY;
+  const delegationEnabled = params.options?.delegation?.enabled ?? true;
+  const delegationDepth = params.options?.delegation?.depth ?? 0;
+  const delegationMaxDepth = params.options?.delegation?.maxDepth ?? 2;
 
   const messages = [...params.messages];
   let usage = emptyUsage();
@@ -332,6 +368,186 @@ export async function runAgentLoop(
         };
       }
 
+      if (toolCall.name === "spawn_subagent") {
+        const input = parseSubagentInvocationInput(toolCall.input);
+
+        if (!delegationEnabled) {
+          messages.push({
+            role: "tool",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            toolInput: toolCall.input,
+            toolError: true,
+            toolCacheHit: false,
+            content:
+              "ERROR: subagent delegation is disabled in this execution context",
+          });
+          continue;
+        }
+
+        if (delegationDepth >= delegationMaxDepth) {
+          messages.push({
+            role: "tool",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            toolInput: toolCall.input,
+            toolError: true,
+            toolCacheHit: false,
+            content: `ERROR: subagent depth cap reached (${delegationMaxDepth})`,
+            toolMetadata: {
+              agent: input.agent,
+              depth: delegationDepth,
+              maxDepth: delegationMaxDepth,
+              status: "depth_cap_reached",
+            },
+          });
+          continue;
+        }
+
+        try {
+          const definition = readSubagentDefinition(input.agent);
+          const remainingBudget = Math.max(
+            0,
+            maxBudgetUsd - usage.estimatedCostUsd,
+          );
+          const subagentMessages: ChatMessage[] = [
+            {
+              role: "system",
+              content: [
+                definition.instructions,
+                "Constraints:",
+                "- Work only on the delegated task.",
+                "- Do not ask the teacher direct questions.",
+                "- Return a concise summary suitable for the planner to merge.",
+              ].join("\n"),
+            },
+            {
+              role: "user",
+              content: input.context
+                ? `Task:\n${input.task}\n\nContext:\n${input.context}`
+                : `Task:\n${input.task}`,
+            },
+          ];
+
+          const subagentResult = await runAgentLoop({
+            teacherId: params.teacherId,
+            sessionId: params.sessionId,
+            provider: params.provider,
+            model: definition.model ?? params.model,
+            messages: subagentMessages,
+            maxTokens: params.maxTokens,
+            options: {
+              maxTurns: Math.min(maxTurns, 12),
+              maxBudgetUsd: remainingBudget,
+              delegation: {
+                enabled: false,
+                depth: delegationDepth + 1,
+                maxDepth: delegationMaxDepth,
+              },
+            },
+          });
+
+          usage = addUsage(usage, subagentResult.usage);
+          for (const skill of subagentResult.skillsLoaded) {
+            skillsLoaded.add(skill);
+          }
+
+          const subagentSummary =
+            [...subagentResult.messages]
+              .reverse()
+              .find((message) => message.role === "assistant")
+              ?.content.trim() || "";
+          const stepSummaries = subagentResult.messages
+            .filter((message) => message.role === "tool")
+            .map((message) => ({
+              tool: message.toolName ?? "tool",
+              status: message.toolError ? "error" : "success",
+              output: message.content.slice(0, 220),
+            }));
+          const subagentStatus =
+            subagentResult.status === "success"
+              ? "success"
+              : subagentResult.status;
+          const resultPayload = {
+            agent: definition.name,
+            task: input.task,
+            summary:
+              subagentSummary ||
+              "Subagent completed without a textual summary.",
+            steps: stepSummaries,
+            status: subagentStatus,
+            usage: subagentResult.usage,
+          };
+
+          messages.push({
+            role: "tool",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            toolInput: toolCall.input,
+            toolError: subagentStatus !== "success",
+            toolCacheHit: false,
+            toolMetadata: {
+              agent: definition.name,
+              depth: delegationDepth + 1,
+              maxDepth: delegationMaxDepth,
+              status: subagentStatus,
+              usage: subagentResult.usage,
+              steps: stepSummaries,
+              task: input.task,
+              summary: resultPayload.summary,
+            },
+            content:
+              subagentStatus === "awaiting_user_question"
+                ? `ERROR: subagent ${definition.name} required user input unexpectedly`
+                : JSON.stringify(resultPayload, null, 2),
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Subagent execution failed";
+          messages.push({
+            role: "tool",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            toolInput: toolCall.input,
+            toolError: true,
+            toolCacheHit: false,
+            toolMetadata: {
+              agent: input.agent,
+              depth: delegationDepth + 1,
+              maxDepth: delegationMaxDepth,
+              status: "error",
+            },
+            content: `ERROR: ${message}`,
+          });
+        }
+
+        const lastToolMessage = [...messages]
+          .reverse()
+          .find(
+            (message) =>
+              message.role === "tool" && message.toolCallId === toolCall.id,
+          );
+        await runHookPhase({
+          hooks,
+          phase: "postTool",
+          context: {
+            turn,
+            messages,
+            toolCall,
+            toolResult: {
+              name: toolCall.name,
+              output: lastToolMessage?.content ?? "",
+              isError: Boolean(lastToolMessage?.toolError),
+              cacheHit: false,
+            },
+          },
+        });
+
+        continue;
+      }
+
       const result = await executeToolWithReadOnceCache({
         toolName: toolCall.name,
         toolInput: toolCall.input,
@@ -389,6 +605,9 @@ export async function runAgentLoopStreaming(
 ): Promise<AgentResult> {
   const maxTurns = params.options?.maxTurns ?? 25;
   const maxBudgetUsd = params.options?.maxBudgetUsd ?? Number.POSITIVE_INFINITY;
+  const delegationEnabled = params.options?.delegation?.enabled ?? true;
+  const delegationDepth = params.options?.delegation?.depth ?? 0;
+  const delegationMaxDepth = params.options?.delegation?.maxDepth ?? 2;
   const chunkAssistantText =
     params.chunkAssistantText ??
     ((content: string) => {
@@ -543,6 +762,183 @@ export async function runAgentLoopStreaming(
             toolInput: toolCall.input,
           }),
         };
+      }
+
+      if (toolCall.name === "spawn_subagent") {
+        const input = parseSubagentInvocationInput(toolCall.input);
+        let toolMessage: ChatMessage;
+
+        if (!delegationEnabled) {
+          toolMessage = {
+            role: "tool",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            toolInput: toolCall.input,
+            toolError: true,
+            toolCacheHit: false,
+            content:
+              "ERROR: subagent delegation is disabled in this execution context",
+          };
+        } else if (delegationDepth >= delegationMaxDepth) {
+          toolMessage = {
+            role: "tool",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            toolInput: toolCall.input,
+            toolError: true,
+            toolCacheHit: false,
+            content: `ERROR: subagent depth cap reached (${delegationMaxDepth})`,
+            toolMetadata: {
+              agent: input.agent,
+              depth: delegationDepth,
+              maxDepth: delegationMaxDepth,
+              status: "depth_cap_reached",
+            },
+          };
+        } else {
+          try {
+            const definition = readSubagentDefinition(input.agent);
+            const remainingBudget = Math.max(
+              0,
+              maxBudgetUsd - usage.estimatedCostUsd,
+            );
+            const subagentMessages: ChatMessage[] = [
+              {
+                role: "system",
+                content: [
+                  definition.instructions,
+                  "Constraints:",
+                  "- Work only on the delegated task.",
+                  "- Do not ask the teacher direct questions.",
+                  "- Return a concise summary suitable for the planner to merge.",
+                ].join("\n"),
+              },
+              {
+                role: "user",
+                content: input.context
+                  ? `Task:\n${input.task}\n\nContext:\n${input.context}`
+                  : `Task:\n${input.task}`,
+              },
+            ];
+
+            const subagentResult = await runAgentLoop({
+              teacherId: params.teacherId,
+              sessionId: params.sessionId,
+              provider: params.provider,
+              model: definition.model ?? params.model,
+              messages: subagentMessages,
+              maxTokens: params.maxTokens,
+              options: {
+                maxTurns: Math.min(maxTurns, 12),
+                maxBudgetUsd: remainingBudget,
+                delegation: {
+                  enabled: false,
+                  depth: delegationDepth + 1,
+                  maxDepth: delegationMaxDepth,
+                },
+              },
+            });
+
+            usage = addUsage(usage, subagentResult.usage);
+            for (const skill of subagentResult.skillsLoaded) {
+              skillsLoaded.add(skill);
+            }
+
+            const subagentSummary =
+              [...subagentResult.messages]
+                .reverse()
+                .find((message) => message.role === "assistant")
+                ?.content.trim() || "";
+            const stepSummaries = subagentResult.messages
+              .filter((message) => message.role === "tool")
+              .map((message) => ({
+                tool: message.toolName ?? "tool",
+                status: message.toolError ? "error" : "success",
+                output: message.content.slice(0, 220),
+              }));
+            const subagentStatus =
+              subagentResult.status === "success"
+                ? "success"
+                : subagentResult.status;
+            const resultPayload = {
+              agent: definition.name,
+              task: input.task,
+              summary:
+                subagentSummary ||
+                "Subagent completed without a textual summary.",
+              steps: stepSummaries,
+              status: subagentStatus,
+              usage: subagentResult.usage,
+            };
+
+            toolMessage = {
+              role: "tool",
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              toolInput: toolCall.input,
+              toolError: subagentStatus !== "success",
+              toolCacheHit: false,
+              toolMetadata: {
+                agent: definition.name,
+                depth: delegationDepth + 1,
+                maxDepth: delegationMaxDepth,
+                status: subagentStatus,
+                usage: subagentResult.usage,
+                steps: stepSummaries,
+                task: input.task,
+                summary: resultPayload.summary,
+              },
+              content:
+                subagentStatus === "awaiting_user_question"
+                  ? `ERROR: subagent ${definition.name} required user input unexpectedly`
+                  : JSON.stringify(resultPayload, null, 2),
+            };
+          } catch (error) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "Subagent execution failed";
+            toolMessage = {
+              role: "tool",
+              toolCallId: toolCall.id,
+              toolName: toolCall.name,
+              toolInput: toolCall.input,
+              toolError: true,
+              toolCacheHit: false,
+              toolMetadata: {
+                agent: input.agent,
+                depth: delegationDepth + 1,
+                maxDepth: delegationMaxDepth,
+                status: "error",
+              },
+              content: `ERROR: ${message}`,
+            };
+          }
+        }
+
+        messages.push(toolMessage);
+        await params.onEvent({
+          message: toolMessage,
+          isFinalAssistant: false,
+        });
+
+        await runHookPhase({
+          hooks,
+          phase: "postTool",
+          context: {
+            turn,
+            messages,
+            toolCall,
+            toolResult: {
+              name: toolCall.name,
+              output: toolMessage.content,
+              isError: Boolean(toolMessage.toolError),
+              cacheHit: false,
+            },
+          },
+        });
+
+        continue;
       }
 
       const result = await executeToolWithReadOnceCache({

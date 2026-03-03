@@ -349,6 +349,26 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "spawn_subagent",
+    description:
+      "Delegate a focused sub-task to a named subagent from agents/. Returns a structured summary for synthesis.",
+    parameters: {
+      type: "object",
+      properties: {
+        agent: { type: "string" },
+        task: { type: "string" },
+        context: { type: "string" },
+      },
+      required: ["agent", "task"],
+      additionalProperties: false,
+    },
+    handler: async () => {
+      throw new Error(
+        "spawn_subagent is handled by the agent loop and should not execute directly",
+      );
+    },
+  },
+  {
     name: "ask_user_question",
     description:
       "Ask the teacher a clarifying question and wait for an explicit response before continuing.",

@@ -18,6 +18,7 @@ import type {
 } from "../../types";
 import { displayContextPath } from "../workspace/path-utils";
 import { AssistantMessage } from "./AssistantMessage";
+import { SubagentDelegationCard } from "./SubagentDelegationCard";
 import { MODEL_OPTIONS } from "./model-options";
 
 type TimelineEntryKind =
@@ -26,6 +27,7 @@ type TimelineEntryKind =
   | "model-response"
   | "skill-read"
   | "tool-step"
+  | "delegation"
   | "tool-group"
   | "final-model-response";
 
@@ -258,6 +260,16 @@ function buildTimelineEntries(
       const message = turnMessages[turnMessageIndex];
 
       if (message.role === "tool") {
+        if (message.toolName === "spawn_subagent") {
+          entries.push({
+            id: `turn-${turnIndex}-delegation-${turnMessageIndex}`,
+            kind: "delegation",
+            message,
+            trace: turnTrace,
+          });
+          continue;
+        }
+
         const start = turnMessageIndex;
         const firstCategory = toolGroupCategory(message);
         const groupedMessages: ChatMessage[] = [message];
@@ -401,6 +413,14 @@ function summaryText(entry: TimelineEntry, pending: boolean): string {
     return entry.message ? toolPreview(entry.message) : "Tool executed";
   }
 
+  if (entry.kind === "delegation") {
+    const agent =
+      typeof entry.message?.toolMetadata?.agent === "string"
+        ? entry.message.toolMetadata.agent
+        : "subagent";
+    return `Delegated to ${agent}`;
+  }
+
   if (entry.kind === "tool-group") {
     return entry.groupLabel ?? "Using tools";
   }
@@ -475,6 +495,42 @@ function responseLabel(trace?: ChatTrace): string {
   return `Raw response (${timestamp})`;
 }
 
+function activityLabel(entries: TimelineEntry[], chatLoading: boolean): string {
+  if (!chatLoading && entries.length === 0) {
+    return "Idle";
+  }
+
+  const latestTool = [...entries]
+    .reverse()
+    .find(
+      (entry) =>
+        (entry.kind === "tool-step" || entry.kind === "delegation") &&
+        entry.message?.role === "tool",
+    );
+
+  if (chatLoading && latestTool?.kind === "delegation") {
+    const agent =
+      typeof latestTool.message?.toolMetadata?.agent === "string"
+        ? latestTool.message.toolMetadata.agent
+        : "subagent";
+    return `Active: ${agent} delegation`;
+  }
+
+  if (chatLoading) {
+    return "Active: planner reasoning";
+  }
+
+  if (latestTool?.kind === "delegation") {
+    const agent =
+      typeof latestTool.message?.toolMetadata?.agent === "string"
+        ? latestTool.message.toolMetadata.agent
+        : "subagent";
+    return `Last activity: delegated to ${agent}`;
+  }
+
+  return "Idle";
+}
+
 export default function ChatPane({
   classRefs,
   selectedClassRef,
@@ -537,6 +593,7 @@ export default function ChatPane({
     isComposerFocused || Boolean(messageInput.trim()) || chatLoading;
   const latestEntryId =
     entries.length > 0 ? (entries[entries.length - 1]?.id ?? "") : "";
+  const currentActivity = activityLabel(entries, chatLoading);
 
   useEffect(() => {
     const token = focusComposerToken;
@@ -677,9 +734,23 @@ export default function ChatPane({
               entry.kind === "context-added" ||
               entry.kind === "skill-read" ||
               entry.kind === "tool-step" ||
+              entry.kind === "delegation" ||
               entry.kind === "tool-group" ||
               entry.kind === "model-response"
             ) {
+              if (
+                entry.kind === "delegation" &&
+                entry.message?.role === "tool"
+              ) {
+                return (
+                  <SubagentDelegationCard
+                    key={entry.id}
+                    message={entry.message}
+                    pending={isPendingFinalResponse}
+                  />
+                );
+              }
+
               const plainSummary = summaryText(
                 entry,
                 isPendingFinalResponse,
@@ -900,6 +971,15 @@ export default function ChatPane({
           {chatError ?? sessionError}
         </p>
       )}
+
+      <div className="mt-2 flex items-center gap-2 px-1 text-xs text-ink-700">
+        {chatLoading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <span className="h-2 w-2 rounded-full bg-paper-400" />
+        )}
+        <span>{currentActivity}</span>
+      </div>
 
       <form
         className={`mx-auto mt-3 w-full ${freshSlate ? "max-w-3xl" : "max-w-5xl"}`}

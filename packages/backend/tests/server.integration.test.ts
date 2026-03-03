@@ -1093,4 +1093,101 @@ describe("server integration", () => {
       "continued with a generic lesson structure",
     );
   });
+
+  it("lists traces and supports trace lookup endpoints", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-agentic-skill",
+        classRef: "3B",
+        messages: [{ role: "user", content: "Build lesson with skills" }],
+      }),
+    });
+    expect(chatResponse.status).toBe(200);
+    const chatBody = (await chatResponse.json()) as { sessionId: string };
+
+    const bySessionResponse = await request(
+      `/api/sessions/${chatBody.sessionId}/traces`,
+      {
+        headers: { cookie },
+      },
+    );
+    expect(bySessionResponse.status).toBe(200);
+    const bySessionBody = (await bySessionResponse.json()) as {
+      traces: Array<{
+        id: string;
+        sessionId: string;
+        summary: { toolCalls: number; hookCalls: number; skillCalls: number };
+        spans: Array<{
+          kind: string;
+          metadata?: {
+            apiRequest?: {
+              provider: string;
+              model: string;
+              messages: unknown[];
+            };
+            apiResponse?: { messages: unknown[] };
+          };
+        }>;
+      }>;
+    };
+    expect((bySessionBody.traces.length ?? 0) > 0).toBe(true);
+    expect(bySessionBody.traces[0]?.sessionId).toBe(chatBody.sessionId);
+    expect((bySessionBody.traces[0]?.summary.toolCalls ?? 0) > 0).toBe(true);
+    expect(
+      (bySessionBody.traces[0]?.spans ?? []).some(
+        (span) => span.kind === "tool" || span.kind === "skill",
+      ),
+    ).toBe(true);
+    const modelSpan = (bySessionBody.traces[0]?.spans ?? []).find(
+      (span) => span.kind === "model",
+    );
+    expect(modelSpan?.metadata?.apiRequest?.provider).toBe("openai");
+    expect(modelSpan?.metadata?.apiRequest?.model).toBe("mock-agentic-skill");
+    expect((modelSpan?.metadata?.apiRequest?.messages.length ?? 0) > 0).toBe(
+      true,
+    );
+    expect((modelSpan?.metadata?.apiResponse?.messages.length ?? 0) > 0).toBe(
+      true,
+    );
+
+    const listResponse = await request("/api/traces?limit=10", {
+      headers: { cookie },
+    });
+    expect(listResponse.status).toBe(200);
+    const listBody = (await listResponse.json()) as {
+      traces: Array<{ id: string; session: { id: string } }>;
+    };
+    expect((listBody.traces.length ?? 0) > 0).toBe(true);
+    expect(listBody.traces[0]?.session.id).toBe(chatBody.sessionId);
+
+    const traceId = bySessionBody.traces[0]?.id;
+    expect(Boolean(traceId)).toBe(true);
+
+    const readResponse = await request(`/api/traces/${traceId}`, {
+      headers: { cookie },
+    });
+    expect(readResponse.status).toBe(200);
+    const readBody = (await readResponse.json()) as {
+      id: string;
+      session: { id: string };
+    };
+    expect(readBody.id).toBe(traceId);
+    expect(readBody.session.id).toBe(chatBody.sessionId);
+  });
 });

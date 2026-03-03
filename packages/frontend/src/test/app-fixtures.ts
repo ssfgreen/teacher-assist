@@ -15,6 +15,9 @@ export const teacher: TeacherProfile = {
   id: "t1",
   email: "teacher@example.com",
   name: "Demo Teacher",
+  access: {
+    traceViewer: true,
+  },
 };
 
 export function resetStores(): void {
@@ -167,10 +170,24 @@ export function setupDefaultMocks(): void {
       {
         name: "backward-design",
         description: "Design lessons from outcomes to evidence to activities.",
+        maxTier: 3,
+        tier3FileCount: 1,
+        tier3Files: ["examples.md"],
+        validation: {
+          valid: true,
+          issues: [],
+        },
       },
       {
         name: "differentiation",
         description: "Plan supports and challenge pathways.",
+        maxTier: 2,
+        tier3FileCount: 0,
+        tier3Files: [],
+        validation: {
+          valid: true,
+          issues: [],
+        },
       },
     ],
   });
@@ -231,6 +248,7 @@ export function setupDefaultMocks(): void {
         status: "success",
         trace: {
           id: "trace-1",
+          sessionId: "s1",
           createdAt: "2026-02-28T00:00:00.000Z",
           systemPrompt: "<assistant-identity>Identity</assistant-identity>",
           estimatedPromptTokens: 42,
@@ -242,6 +260,21 @@ export function setupDefaultMocks(): void {
           },
           status: "success",
           steps: [],
+          spans: [
+            {
+              id: "span-model",
+              kind: "model",
+              label: "model-turn",
+              startedAt: "2026-02-28T00:00:00.000Z",
+              endedAt: "2026-02-28T00:00:00.000Z",
+              status: "success",
+            },
+          ],
+          summary: {
+            toolCalls: 0,
+            hookCalls: 0,
+            skillCalls: 0,
+          },
         },
         workspaceContextLoaded: ["soul.md", "classes/3B/CLASS.md"],
         memoryContextLoaded: ["MEMORY.md"],

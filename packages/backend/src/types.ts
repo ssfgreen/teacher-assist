@@ -34,6 +34,13 @@ export interface SessionTask {
 export interface SkillSummary {
   name: string;
   description: string;
+  maxTier: 2 | 3;
+  tier3FileCount: number;
+  tier3Files: string[];
+  validation: {
+    valid: boolean;
+    issues: string[];
+  };
 }
 
 export type TokenUsage = SharedTokenUsage;
@@ -45,8 +52,29 @@ export interface ChatTraceStep {
   isError: boolean;
 }
 
+export type TraceSpanKind =
+  | "model"
+  | "tool"
+  | "subagent"
+  | "hook"
+  | "skill"
+  | "feedforward"
+  | "reflection"
+  | "adjudication";
+
+export interface ChatTraceSpan {
+  id: string;
+  kind: TraceSpanKind;
+  label: string;
+  startedAt: string;
+  endedAt: string;
+  status: "success" | "error" | "pending";
+  metadata?: Record<string, unknown>;
+}
+
 export interface ChatTrace {
   id: string;
+  sessionId: string;
   createdAt: string;
   systemPrompt: string;
   estimatedPromptTokens: number;
@@ -54,6 +82,12 @@ export interface ChatTrace {
   status: "success" | "error_max_turns" | "error_max_budget";
   steps: ChatTraceStep[];
   memorySelectionSummary?: string;
+  spans: ChatTraceSpan[];
+  summary: {
+    toolCalls: number;
+    hookCalls: number;
+    skillCalls: number;
+  };
 }
 
 export interface ModelResponse {
