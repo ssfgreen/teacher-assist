@@ -1088,9 +1088,9 @@ export default function ChatPane({
           style={{
             borderRadius: "28px",
             gridTemplateColumns: "auto minmax(0,1fr) auto",
-            gridTemplateAreas: composerExpanded
-              ? "'primary primary primary' 'leading footer trailing'"
-              : "'leading primary trailing' 'leading footer trailing'",
+            // Keep the composer grid stable on focus to prevent control/caret jumps.
+            gridTemplateAreas:
+              "'leading primary trailing' 'leading footer trailing'",
           }}
         >
           <div className="flex items-end pb-1" style={{ gridArea: "leading" }}>

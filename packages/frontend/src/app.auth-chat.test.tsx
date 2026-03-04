@@ -112,6 +112,36 @@ describe("App auth and chat", () => {
     });
   });
 
+  it("keeps composer layout stable when the input is focused", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText(
+      "Type your message...",
+    ) as HTMLTextAreaElement;
+    const composerLayout = input.parentElement as HTMLElement;
+
+    expect(composerLayout.style.gridTemplateAreas).toBe(
+      "'leading primary trailing' 'leading footer trailing'",
+    );
+
+    await user.click(input);
+
+    expect(composerLayout.style.gridTemplateAreas).toBe(
+      "'leading primary trailing' 'leading footer trailing'",
+    );
+
+    await user.type(input, "A");
+
+    expect(composerLayout.style.gridTemplateAreas).toBe(
+      "'leading primary trailing' 'leading footer trailing'",
+    );
+  });
+
   it("renders context and tool steps before stream completion", async () => {
     let resolveStream!: (value: ChatApiResponse) => void;
     const streamDone = new Promise<ChatApiResponse>((resolve) => {
