@@ -26,6 +26,9 @@ export class SessionEntity {
   @Column({ type: "text" })
   model!: string;
 
+  @Column({ name: "approval_mode", type: "text", default: "feedforward" })
+  approvalMode!: string;
+
   @Column({ name: "class_ref", type: "text", nullable: true })
   classRef!: string | null;
 

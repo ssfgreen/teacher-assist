@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  ApprovalMode,
   ChatMessage,
   ChatTrace,
   CommandSummary,
@@ -18,6 +19,7 @@ import type {
 } from "../../types";
 import { displayContextPath } from "../workspace/path-utils";
 import { AssistantMessage } from "./AssistantMessage";
+import InteractiveCard from "./InteractiveCard";
 import { SubagentDelegationCard } from "./SubagentDelegationCard";
 import { MODEL_OPTIONS } from "./model-options";
 
@@ -62,6 +64,8 @@ interface ChatPaneProps {
   sessionLoading: boolean;
   provider: Provider;
   model: string;
+  approvalMode: ApprovalMode;
+  setApprovalMode: (mode: ApprovalMode) => void;
   setProvider: (provider: Provider) => void;
   setModel: (model: string) => void;
   onInspectSkill: (skillName: string) => void;
@@ -73,6 +77,71 @@ interface ChatPaneProps {
   sendMessage: () => Promise<void>;
   cancelMessage: () => void;
   interactiveLocked?: boolean;
+  interactiveState:
+    | {
+        kind: "feedforward";
+        summary: string;
+      }
+    | {
+        kind: "reflection";
+        prompt: string;
+      }
+    | {
+        kind: "adjudication";
+        sections: Array<{ id: string; title: string; preview: string }>;
+      }
+    | {
+        kind: "question";
+        question: string;
+        options: string[];
+        allowFreeText: boolean;
+      }
+    | {
+        kind: "approval";
+        question: string;
+        options: string[];
+        allowFreeText: boolean;
+        approvalKind: "tool_call" | "skill_selection";
+        skills: string[];
+        contextSelection?: {
+          optional: Array<{
+            id: string;
+            label: string;
+            kind: "workspace" | "memory";
+            path?: string;
+          }>;
+          required: Array<{
+            id: string;
+            label: string;
+            kind: "workspace" | "system";
+            path?: string;
+          }>;
+        };
+      }
+    | null;
+  interactiveInput: string;
+  setInteractiveInput: (value: string) => void;
+  onFeedforward: (
+    action: "confirm" | "edit" | "dismiss",
+    note?: string,
+  ) => void;
+  onReflection: (action: "acknowledge" | "skip") => void;
+  onAdjudication: (
+    action: "accept" | "revise" | "alternatives",
+    note?: string,
+  ) => void;
+  onQuestion: (answer: string) => void;
+  onApproval: (
+    decision:
+      | "approve"
+      | "always_allow"
+      | "deny"
+      | "approve_selected"
+      | "deny_all",
+    selectedSkills?: string[],
+    alternateResponse?: string,
+    selectedContextIds?: string[],
+  ) => void;
 }
 
 function toolMessageSignature(message: ChatMessage): string {
@@ -551,6 +620,8 @@ export default function ChatPane({
   sessionLoading,
   provider,
   model,
+  approvalMode,
+  setApprovalMode,
   setProvider,
   setModel,
   onInspectSkill,
@@ -562,6 +633,14 @@ export default function ChatPane({
   sendMessage,
   cancelMessage,
   interactiveLocked = false,
+  interactiveState,
+  interactiveInput,
+  setInteractiveInput,
+  onFeedforward,
+  onReflection,
+  onAdjudication,
+  onQuestion,
+  onApproval,
 }: ChatPaneProps) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -972,6 +1051,18 @@ export default function ChatPane({
         </p>
       )}
 
+      <InteractiveCard
+        state={interactiveState}
+        input={interactiveInput}
+        setInput={setInteractiveInput}
+        loading={chatLoading}
+        onFeedforward={onFeedforward}
+        onReflection={onReflection}
+        onAdjudication={onAdjudication}
+        onQuestion={onQuestion}
+        onApproval={onApproval}
+      />
+
       <div className="mt-2 flex items-center gap-2 px-1 text-xs text-ink-700">
         {chatLoading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1112,6 +1203,21 @@ export default function ChatPane({
                     {ref}
                   </option>
                 ))}
+              </select>
+
+              <label className="sr-only" htmlFor="approvalMode">
+                Approval mode
+              </label>
+              <select
+                id="approvalMode"
+                className="rounded-full border border-paper-300 bg-surface-panel px-3 py-1 text-xs"
+                value={approvalMode}
+                onChange={(event) =>
+                  setApprovalMode(event.target.value as ApprovalMode)
+                }
+              >
+                <option value="feedforward">FeedForward</option>
+                <option value="automation">Automation</option>
               </select>
 
               <label className="sr-only" htmlFor="command">

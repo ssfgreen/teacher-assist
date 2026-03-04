@@ -1,4 +1,4 @@
-# Sprint 11 - Onboarding and Multi-Provider Comparison
+# Sprint 11 - Evaluation Framework and Document Preview
 
 ## Alignment Status
 
@@ -7,25 +7,26 @@
 
 ## Goal
 
-Reduce time-to-first-value for teachers and formalize model-comparison tooling for research quality/cost tradeoff analysis.
+Improve output assessment and usability by pairing eval infrastructure with an artifact preview/export experience.
 
 ## Frontend Scope
 
-- [ ] Guided onboarding flow for first-run setup
-- [ ] Template-assisted workspace initialization
-- [ ] First-session walkthrough for feedforward/adjudication loop
+- [ ] Document preview panel for generated artifacts
+- [ ] Preview sync with adjudication decisions
+- [ ] Export affordances (copy/download/print-friendly styles)
 
 ## Backend Scope
 
-- [ ] Multi-provider comparison harnesses across identical prompts/cases
-- [ ] Reporting pipeline for provider differences (quality, cost, latency)
+- [ ] `evals/` framework for regression and comparative runs
+- [ ] Structural/model-as-judge/comparison eval pipelines
+- [ ] Cost tracking and stored eval results
 
 ## Shared Contracts
 
-- [ ] Onboarding completion state and default workspace seeding hooks
-- [ ] Comparable run metadata keyed by provider/model for analysis
+- [ ] Stable artifact payload structure to power preview rendering
+- [ ] Evaluation result schema for reporting in future research views
 
 ## Test and Verification
 
-- [ ] Onboarding progression and completion tests
-- [ ] Provider comparison regression tests and report checks
+- [ ] Frontend preview rendering and export tests
+- [ ] Backend eval runner and scoring integrity tests

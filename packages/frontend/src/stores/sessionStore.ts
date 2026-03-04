@@ -6,18 +6,20 @@ import {
   readSession,
   removeSession,
 } from "../api/sessions";
-import type { Provider, SessionRecord } from "../types";
+import type { ApprovalMode, Provider, SessionRecord } from "../types";
 
 interface SessionState {
   sessions: SessionRecord[];
   currentSession: SessionRecord | null;
   provider: Provider;
   model: string;
+  approvalMode: ApprovalMode;
   loading: boolean;
   error: string | null;
   initialise: () => Promise<void>;
   setProvider: (provider: Provider) => void;
   setModel: (model: string) => void;
+  setApprovalMode: (mode: ApprovalMode) => void;
   createNewSession: () => Promise<SessionRecord>;
   selectSession: (id: string) => Promise<void>;
   upsertCurrentSession: (session: SessionRecord) => void;
@@ -26,6 +28,7 @@ interface SessionState {
 }
 
 const MODEL_KEY = "teacher-assist:model";
+const APPROVAL_MODE_KEY = "teacher-assist:approval-mode";
 
 function defaultModelForProvider(provider: Provider): string {
   return provider === "anthropic" ? "mock-anthropic" : "mock-openai";
@@ -52,13 +55,24 @@ function persistModelPref(provider: Provider, model: string): void {
   localStorage.setItem(MODEL_KEY, JSON.stringify({ provider, model }));
 }
 
+function readApprovalModePref(): ApprovalMode {
+  const raw = localStorage.getItem(APPROVAL_MODE_KEY);
+  return raw === "automation" ? "automation" : "feedforward";
+}
+
+function persistApprovalModePref(mode: ApprovalMode): void {
+  localStorage.setItem(APPROVAL_MODE_KEY, mode);
+}
+
 const modelPref = readModelPref();
+const approvalModePref = readApprovalModePref();
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   currentSession: null,
   provider: modelPref.provider,
   model: modelPref.model,
+  approvalMode: approvalModePref,
   loading: false,
   error: null,
 
@@ -78,10 +92,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ model });
   },
 
+  setApprovalMode: (mode) => {
+    persistApprovalModePref(mode);
+    set({ approvalMode: mode });
+  },
+
   createNewSession: async () => {
     set({ loading: true, error: null });
     try {
-      const created = await createSession(get().provider, get().model);
+      const created = await createSession(
+        get().provider,
+        get().model,
+        get().approvalMode,
+      );
       const sessions = [created, ...get().sessions];
       set({ sessions, currentSession: created, loading: false });
       return created;

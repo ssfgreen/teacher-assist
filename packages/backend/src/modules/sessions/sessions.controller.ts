@@ -29,13 +29,20 @@ export class SessionsController {
   @Post()
   async create(
     @Req() request: Request,
-    @Body() body: { provider: string; model: string; messages?: ChatMessage[] },
+    @Body()
+    body: {
+      provider: string;
+      model: string;
+      approvalMode?: string;
+      messages?: ChatMessage[];
+    },
   ) {
     const teacher = await this.authService.requireTeacher(request);
     return this.sessionsService.create({
       teacherId: teacher.id,
       provider: body.provider,
       model: body.model,
+      approvalMode: body.approvalMode,
       messages: body.messages,
     });
   }

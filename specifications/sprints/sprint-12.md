@@ -1,4 +1,4 @@
-# Sprint 12 - Research Mode and Production Hardening
+# Sprint 12 - Onboarding and Multi-Provider Comparison
 
 ## Alignment Status
 
@@ -7,26 +7,25 @@
 
 ## Goal
 
-Add researcher-specific runtime controls while hardening reliability and operational safety for longer study runs.
+Reduce time-to-first-value for teachers and formalize model-comparison tooling for research quality/cost tradeoff analysis.
 
 ## Frontend Scope
 
-- [ ] Research mode toggle and instrumentation UI
-- [ ] Expanded trace visibility and study controls
-- [ ] Data export interaction surfaces
+- [ ] Guided onboarding flow for first-run setup
+- [ ] Template-assisted workspace initialization
+- [ ] First-session walkthrough for feedforward/adjudication loop
 
 ## Backend Scope
 
-- [ ] Production hardening (timeouts, retries, failure handling, observability)
-- [ ] Operational safeguards for longer sessions and concurrent users
-- [ ] Export pipelines for anonymized research datasets
+- [ ] Multi-provider comparison harnesses across identical prompts/cases
+- [ ] Reporting pipeline for provider differences (quality, cost, latency)
 
 ## Shared Contracts
 
-- [ ] Research-mode capability flags in API/user context
-- [ ] Stable export format for traces/sessions/memory events
+- [ ] Onboarding completion state and default workspace seeding hooks
+- [ ] Comparable run metadata keyed by provider/model for analysis
 
 ## Test and Verification
 
-- [ ] Research mode access and visibility tests
-- [ ] Reliability/load and failure-recovery tests
+- [ ] Onboarding progression and completion tests
+- [ ] Provider comparison regression tests and report checks

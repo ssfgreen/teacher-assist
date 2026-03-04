@@ -1,4 +1,5 @@
 export type Provider = "anthropic" | "openai";
+export type ApprovalMode = "automation" | "feedforward";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";

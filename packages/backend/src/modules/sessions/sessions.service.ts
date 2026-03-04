@@ -10,7 +10,17 @@ import {
   listSessions,
   readSession,
 } from "../../store";
-import type { ChatMessage, Provider } from "../../types";
+import type { ApprovalMode, ChatMessage, Provider } from "../../types";
+
+function parseApprovalMode(mode?: string): ApprovalMode {
+  if (mode === "automation") {
+    return "automation";
+  }
+  if (mode === "feedforward" || !mode) {
+    return "feedforward";
+  }
+  throwApiError(400, "Unsupported approval mode");
+}
 
 @Injectable()
 export class SessionsService {
@@ -18,6 +28,7 @@ export class SessionsService {
     teacherId: string;
     provider: string;
     model: string;
+    approvalMode?: string;
     messages?: ChatMessage[];
   }) {
     try {
@@ -32,6 +43,7 @@ export class SessionsService {
       teacherId: params.teacherId,
       provider: params.provider as Provider,
       model: params.model,
+      approvalMode: parseApprovalMode(params.approvalMode),
       messages: params.messages,
     });
   }

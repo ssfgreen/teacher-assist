@@ -1,10 +1,12 @@
 import type {
+  ApprovalMode as SharedApprovalMode,
   ChatMessage as SharedChatMessage,
   Provider as SharedProvider,
   TokenUsage as SharedTokenUsage,
 } from "../../shared/types";
 
 export type Provider = SharedProvider;
+export type ApprovalMode = SharedApprovalMode;
 
 export interface ToolCall {
   id: string;
@@ -59,6 +61,7 @@ export type TraceSpanKind =
   | "hook"
   | "skill"
   | "feedforward"
+  | "approval"
   | "reflection"
   | "adjudication";
 
@@ -109,6 +112,7 @@ export interface SessionRecord {
   teacherId: string;
   provider: Provider;
   model: string;
+  approvalMode: ApprovalMode;
   classRef?: string | null;
   messages: ChatMessage[];
   tasks: SessionTask[];

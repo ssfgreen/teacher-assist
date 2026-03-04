@@ -1,10 +1,16 @@
-import type { ChatApiResponse, ChatMessage, Provider } from "../types";
+import type {
+  ApprovalMode,
+  ChatApiResponse,
+  ChatMessage,
+  Provider,
+} from "../types";
 import { apiFetch } from "./client";
 
 export async function sendChat(params: {
   messages: ChatMessage[];
   provider: Provider;
   model: string;
+  approvalMode: ApprovalMode;
   command?: string;
   sessionId?: string;
   classRef?: string;
@@ -66,11 +72,31 @@ export async function sendQuestionResponse(params: {
   });
 }
 
+export async function sendApprovalResponse(params: {
+  sessionId: string;
+  actionId: string;
+  decision:
+    | "approve"
+    | "always_allow"
+    | "deny"
+    | "approve_selected"
+    | "deny_all";
+  selectedSkills?: string[];
+  selectedContextIds?: string[];
+  alternateResponse?: string;
+}): Promise<ChatApiResponse> {
+  return apiFetch<ChatApiResponse>("/api/chat/approval-response", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 export async function sendChatStream(
   params: {
     messages: ChatMessage[];
     provider: Provider;
     model: string;
+    approvalMode: ApprovalMode;
     command?: string;
     sessionId?: string;
     classRef?: string;

@@ -1,32 +1,37 @@
-# Sprint 10 - Evaluation Framework and Document Preview
+# Sprint 10 - Handoffs
 
 ## Alignment Status
 
-- [ ] Frontend: Planned
-- [ ] Backend: Planned
+- [ ] Frontend: Planned (reordered from prior frontend Sprint 7)
+- [ ] Backend: Planned (reordered from prior backend Sprint 7)
 
 ## Goal
 
-Improve output assessment and usability by pairing eval infrastructure with an artifact preview/export experience.
+Support explicit agent-to-agent handoffs with visible transitions, maintained context continuity, and attributed post-handoff outputs.
 
 ## Frontend Scope
 
-- [ ] Document preview panel for generated artifacts
-- [ ] Preview sync with adjudication decisions
-- [ ] Export affordances (copy/download/print-friendly styles)
+- [ ] Handoff transition cards in timeline
+- [ ] Active-agent label updates after handoff
+- [ ] Agent-aware message attribution styling
+- [ ] Handoff detail inspection in trace and message views
 
 ## Backend Scope
 
-- [ ] `evals/` framework for regression and comparative runs
-- [ ] Structural/model-as-judge/comparison eval pipelines
-- [ ] Cost tracking and stored eval results
+- [ ] `transfer_to_{agent_name}` tool generation from agent definitions
+- [ ] Handoff context block construction and injection
+- [ ] `onHandoff` lifecycle support and tracing
+- [ ] Chat response updates with `currentAgent`
+- [ ] Stream support for `handoff` events
 
 ## Shared Contracts
 
-- [ ] Stable artifact payload structure to power preview rendering
-- [ ] Evaluation result schema for reporting in future research views
+- [ ] Extend chat payload with `currentAgent`
+- [ ] Extend stream event schema with `handoff` payload
+- [ ] Ensure replay/resume sessions persist active agent context
 
 ## Test and Verification
 
-- [ ] Frontend preview rendering and export tests
-- [ ] Backend eval runner and scoring integrity tests
+- [ ] Frontend tests for transition cards and agent attribution updates
+- [ ] Backend tests for handoff chain safety and context transfer
+- [ ] Integration tests for multi-hop handoffs and trace attribution

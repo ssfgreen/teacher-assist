@@ -353,7 +353,7 @@ describe("App auth and chat", () => {
     await screen.findByText("Create starter questions");
   });
 
-  it("uses selected provider and model for chat requests", async () => {
+  it("uses selected provider, model, and approval mode for chat requests", async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -366,6 +366,10 @@ describe("App auth and chat", () => {
       screen.getByLabelText("Model"),
       "claude-sonnet-4-6",
     );
+    await user.selectOptions(
+      screen.getByLabelText("Approval mode"),
+      "automation",
+    );
 
     const input = screen.getByPlaceholderText("Type your message...");
     await user.type(input, "Use anthropic{enter}");
@@ -377,6 +381,7 @@ describe("App auth and chat", () => {
     expect(vi.mocked(chatApi.sendChatStream).mock.calls[0][0]).toMatchObject({
       provider: "anthropic",
       model: "claude-sonnet-4-6",
+      approvalMode: "automation",
     });
   });
 
@@ -462,6 +467,107 @@ describe("App auth and chat", () => {
         sessionId: "s1",
         action: "confirm",
         note: undefined,
+      });
+    });
+  });
+
+  it("renders context-selection approval near composer and submits selected context ids", async () => {
+    vi.mocked(chatApi.sendChatStream).mockResolvedValueOnce({
+      sessionId: "s1",
+      messages: [{ role: "user", content: "Plan loops" }],
+      skillsLoaded: [],
+      status: "awaiting_approval",
+      approval: {
+        actionId: "approval:context:s1",
+        kind: "tool_call",
+        question:
+          "Select optional context to include before generating a response.",
+        options: ["approve", "deny"],
+        allow_free_text: false,
+        approvalScope: "context",
+        contextSelection: {
+          optional: [
+            {
+              id: "workspace:teacher.md",
+              label: "Teacher Profile",
+              kind: "workspace",
+              path: "teacher.md",
+            },
+            {
+              id: "workspace:pedagogy.md",
+              label: "Pedagogy Preferences",
+              kind: "workspace",
+              path: "pedagogy.md",
+            },
+            {
+              id: "workspace:soul.md",
+              label: "Assistant Identity",
+              kind: "workspace",
+              path: "soul.md",
+            },
+          ],
+          required: [
+            {
+              id: "workspace:classes/catalog.md",
+              label: "Available Classes Catalog",
+              kind: "workspace",
+              path: "classes/catalog.md",
+            },
+          ],
+        },
+      },
+      trace: {
+        id: "trace-context-approval",
+        createdAt: "2026-03-03T00:00:00.000Z",
+        systemPrompt: "<assistant-identity>Identity</assistant-identity>",
+        estimatedPromptTokens: 12,
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        },
+        status: "success",
+        steps: [],
+      },
+      workspaceContextLoaded: ["soul.md", "teacher.md", "pedagogy.md"],
+      memoryContextLoaded: [],
+      response: {
+        content: "",
+        toolCalls: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+        },
+        stopReason: "stop",
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Sign in" });
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByText("Demo Teacher");
+
+    const input = screen.getByPlaceholderText("Type your message...");
+    await user.type(input, "Plan loops{enter}");
+
+    await screen.findByText(/context gathered/i);
+    await screen.findByText(/show context added/i);
+    await user.click(screen.getByLabelText("Assistant Identity"));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(chatApi.sendApprovalResponse).toHaveBeenCalledWith({
+        sessionId: "s1",
+        actionId: "approval:context:s1",
+        decision: "approve",
+        selectedSkills: undefined,
+        selectedContextIds: ["workspace:teacher.md", "workspace:pedagogy.md"],
+        alternateResponse: undefined,
       });
     });
   });

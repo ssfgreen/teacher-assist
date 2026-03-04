@@ -16,7 +16,6 @@ import Shell from "./components/layout/Shell";
 import MarkdownRenderer from "./components/markdown/MarkdownRenderer";
 import LoginPanel from "./features/auth/LoginPanel";
 import ChatPane from "./features/chat/ChatPane";
-import InteractiveCard from "./features/chat/InteractiveCard";
 import { MODEL_OPTIONS } from "./features/chat/model-options";
 import { useChatSession } from "./features/chat/useChatSession";
 import MemoryCaptureCard from "./features/memory/MemoryCaptureCard";
@@ -195,6 +194,7 @@ export default function App() {
   const currentSession = useSessionStore((state) => state.currentSession);
   const provider = useSessionStore((state) => state.provider);
   const model = useSessionStore((state) => state.model);
+  const approvalMode = useSessionStore((state) => state.approvalMode);
   const sessionLoading = useSessionStore((state) => state.loading);
   const sessionError = useSessionStore((state) => state.error);
   const initialiseSessions = useSessionStore((state) => state.initialise);
@@ -207,6 +207,7 @@ export default function App() {
   const deleteSession = useSessionStore((state) => state.deleteSession);
   const setProvider = useSessionStore((state) => state.setProvider);
   const setModel = useSessionStore((state) => state.setModel);
+  const setApprovalMode = useSessionStore((state) => state.setApprovalMode);
 
   const workspaceTree = useWorkspaceStore((state) => state.tree);
   const classRefs = useWorkspaceStore((state) => state.classRefs);
@@ -319,11 +320,13 @@ export default function App() {
     submitReflection,
     submitAdjudication,
     submitQuestion,
+    submitApproval,
     cancelMessage,
   } = useChatSession({
     currentSession,
     provider,
     model,
+    approvalMode,
     selectedCommandId,
     selectedClassRef,
     createNewSession,
@@ -1274,48 +1277,6 @@ export default function App() {
               await initialiseMemory();
             }}
           />
-          <InteractiveCard
-            state={
-              interactiveState
-                ? interactiveState.kind === "feedforward"
-                  ? {
-                      kind: "feedforward",
-                      summary: interactiveState.summary,
-                    }
-                  : interactiveState.kind === "reflection"
-                    ? {
-                        kind: "reflection",
-                        prompt: interactiveState.prompt,
-                      }
-                    : interactiveState.kind === "adjudication"
-                      ? {
-                          kind: "adjudication",
-                          sections: interactiveState.sections,
-                        }
-                      : {
-                          kind: "question",
-                          question: interactiveState.question,
-                          options: interactiveState.options,
-                          allowFreeText: interactiveState.allowFreeText,
-                        }
-                : null
-            }
-            input={interactiveInput}
-            setInput={setInteractiveInput}
-            loading={chatLoading}
-            onFeedforward={(action, note) => {
-              void submitFeedforward(action, note);
-            }}
-            onReflection={(action) => {
-              void submitReflection(action);
-            }}
-            onAdjudication={(action, note) => {
-              void submitAdjudication(action, note);
-            }}
-            onQuestion={(answer) => {
-              void submitQuestion(answer);
-            }}
-          />
           <div
             className={`min-h-0 flex-1 pr-0 transition-[padding] duration-200 ease-out ${inspector ? "lg:pr-[26rem]" : ""}`}
           >
@@ -1339,6 +1300,8 @@ export default function App() {
               sessionLoading={sessionLoading}
               provider={provider}
               model={model}
+              approvalMode={approvalMode}
+              setApprovalMode={setApprovalMode}
               setProvider={(nextProvider) => {
                 const fallbackModel = MODEL_OPTIONS[nextProvider][0];
                 setProvider(nextProvider);
@@ -1354,6 +1317,69 @@ export default function App() {
               sendMessage={sendMessage}
               cancelMessage={cancelMessage}
               interactiveLocked={Boolean(interactiveState)}
+              interactiveState={
+                interactiveState
+                  ? interactiveState.kind === "feedforward"
+                    ? {
+                        kind: "feedforward",
+                        summary: interactiveState.summary,
+                      }
+                    : interactiveState.kind === "reflection"
+                      ? {
+                          kind: "reflection",
+                          prompt: interactiveState.prompt,
+                        }
+                      : interactiveState.kind === "adjudication"
+                        ? {
+                            kind: "adjudication",
+                            sections: interactiveState.sections,
+                          }
+                        : interactiveState.kind === "question"
+                          ? {
+                              kind: "question",
+                              question: interactiveState.question,
+                              options: interactiveState.options,
+                              allowFreeText: interactiveState.allowFreeText,
+                            }
+                          : {
+                              kind: "approval",
+                              question: interactiveState.question,
+                              options: interactiveState.options,
+                              allowFreeText: interactiveState.allowFreeText,
+                              approvalKind: interactiveState.approvalKind,
+                              skills: interactiveState.skills,
+                              contextSelection:
+                                interactiveState.contextSelection,
+                            }
+                  : null
+              }
+              interactiveInput={interactiveInput}
+              setInteractiveInput={setInteractiveInput}
+              onFeedforward={(action, note) => {
+                void submitFeedforward(action, note);
+              }}
+              onReflection={(action) => {
+                void submitReflection(action);
+              }}
+              onAdjudication={(action, note) => {
+                void submitAdjudication(action, note);
+              }}
+              onQuestion={(answer) => {
+                void submitQuestion(answer);
+              }}
+              onApproval={(
+                decision,
+                selectedSkills,
+                alternateResponse,
+                selectedContextIds,
+              ) => {
+                void submitApproval({
+                  decision,
+                  selectedSkills,
+                  selectedContextIds,
+                  alternateResponse,
+                });
+              }}
             />
             {commandsError ? (
               <p className="mt-2 text-xs text-danger-700">{commandsError}</p>

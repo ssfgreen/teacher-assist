@@ -226,6 +226,83 @@ describe("server integration", () => {
     ).toBe(true);
   });
 
+  it("returns context selection approval payload and accepts selected optional context", async () => {
+    const loginResponse = await request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "teacher@example.com",
+        password: "password123",
+      }),
+    });
+    const cookie = loginResponse.headers.get("set-cookie") ?? "";
+
+    const chatResponse = await request("/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        provider: "openai",
+        model: "mock-openai",
+        approvalMode: "feedforward",
+        messages: [{ role: "user", content: "Plan loops for 3B" }],
+      }),
+    });
+
+    expect(chatResponse.status).toBe(200);
+    const paused = (await chatResponse.json()) as {
+      status: string;
+      sessionId: string;
+      approval?: {
+        actionId: string;
+        approvalScope?: string;
+        contextSelection?: {
+          optional: Array<{ id: string; label: string }>;
+          required: Array<{ id: string; label: string }>;
+        };
+      };
+    };
+    expect(paused.status).toBe("awaiting_approval");
+    expect(paused.approval?.approvalScope).toBe("context");
+    expect(paused.approval?.contextSelection?.optional.length).toBeGreaterThan(
+      0,
+    );
+    expect(paused.approval?.contextSelection?.required.length).toBeGreaterThan(
+      0,
+    );
+
+    const selectedContextIds = (
+      paused.approval?.contextSelection?.optional ?? []
+    )
+      .filter((item) => item.id !== "workspace:soul.md")
+      .map((item) => item.id);
+
+    const approvalResponse = await request("/api/chat/approval-response", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        sessionId: paused.sessionId,
+        actionId: paused.approval?.actionId,
+        decision: "approve",
+        selectedContextIds,
+      }),
+    });
+
+    expect(approvalResponse.status).toBe(200);
+    const resumed = (await approvalResponse.json()) as { status: string };
+    expect(
+      resumed.status === "no_new_memory" ||
+        resumed.status === "awaiting_memory_capture" ||
+        resumed.status === "awaiting_user_question" ||
+        resumed.status === "awaiting_approval",
+    ).toBe(true);
+  });
+
   it("pauses on ask_user_question and resumes via question-response", async () => {
     const loginResponse = await request("/api/auth/login", {
       method: "POST",

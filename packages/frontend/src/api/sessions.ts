@@ -1,13 +1,19 @@
-import type { ChatMessage, Provider, SessionRecord } from "../types";
+import type {
+  ApprovalMode,
+  ChatMessage,
+  Provider,
+  SessionRecord,
+} from "../types";
 import { apiFetch } from "./client";
 
 export async function createSession(
   provider: Provider,
   model: string,
+  approvalMode: ApprovalMode,
 ): Promise<SessionRecord> {
   return apiFetch<SessionRecord>("/api/sessions", {
     method: "POST",
-    body: JSON.stringify({ provider, model }),
+    body: JSON.stringify({ provider, model, approvalMode }),
   });
 }
 

@@ -1,4 +1,4 @@
-# Sprint 14 - Teacher Dashboard and Deployment/Auth Hardening
+# Sprint 14 - Accessibility, Polish, and Study Support
 
 ## Alignment Status
 
@@ -7,25 +7,25 @@
 
 ## Goal
 
-Finish with teacher-facing usage analytics and production-grade security/deployment posture.
+Bring UX quality to study-ready standards with accessibility compliance and supporting research workflows.
 
 ## Frontend Scope
 
-- [ ] Teacher dashboard for sessions, memory growth, artifact output, and skill usage
-- [ ] Clear separation from researcher-only analytics surfaces
+- [ ] Keyboard navigation and focus management
+- [ ] Screen-reader semantics and ARIA coverage
+- [ ] Responsive refinement, loading skeletons, and transition polish
 
 ## Backend Scope
 
-- [ ] Deployment hardening and auth/security improvements
-- [ ] Tenant isolation and policy enforcement validation
-- [ ] Operational readiness for sustained usage
+- [ ] Study-support capabilities (structured export/audit hooks)
+- [ ] Data-quality controls for research logging completeness
 
 ## Shared Contracts
 
-- [ ] Dashboard metrics endpoints aligned to trace/session/memory models
-- [ ] Strong auth boundaries preserved across all analytics reads
+- [ ] Accessibility behavior remains compatible with interactive hook states
+- [ ] Research exports preserve integrity and privacy constraints
 
 ## Test and Verification
 
-- [ ] Dashboard metric correctness tests
-- [ ] Security/integration tests for auth and tenant isolation
+- [ ] Accessibility audits and keyboard/screen-reader regression tests
+- [ ] Data integrity checks for exported study artifacts

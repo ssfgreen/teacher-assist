@@ -26,6 +26,7 @@ Each file combines frontend and backend scope for the same sprint, including sha
 - `sprint-12.md`
 - `sprint-13.md`
 - `sprint-14.md`
+- `sprint-15.md`
 
 ## Alignment Notes
 
@@ -34,7 +35,8 @@ Each file combines frontend and backend scope for the same sprint, including sha
   1. Sprint 06: Commands + Interactive Hooks
   2. Sprint 07: Traces Viewer + Full Skills/Curriculum Authoring
   3. Sprint 08: Subagents
-  4. Sprint 09: Handoffs
+  4. Sprint 09: Approval Mode (Automation vs FeedForward)
+  5. Sprint 10: Handoffs
 - This remaps older references where subagents/handoffs appeared before commands/hooks.
 
 ## Source of Truth

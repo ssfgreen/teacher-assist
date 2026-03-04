@@ -9,6 +9,7 @@ import { authTokens, rateLimitMap } from "./store/state";
 import { SessionEntity } from "./typeorm/entities/session.entity";
 import { TeacherEntity } from "./typeorm/entities/teacher.entity";
 import type {
+  ApprovalMode,
   ChatMessage,
   ChatTrace,
   Provider,
@@ -33,11 +34,14 @@ function parseArray<T>(value: unknown): T[] {
 }
 
 function toSessionRecord(entity: SessionEntity): SessionRecord {
+  const approvalMode =
+    entity.approvalMode === "automation" ? "automation" : "feedforward";
   return {
     id: entity.id,
     teacherId: entity.teacherId,
     provider: entity.provider as Provider,
     model: entity.model,
+    approvalMode,
     classRef: entity.classRef,
     messages: parseArray<ChatMessage>(entity.messages),
     tasks: parseArray<SessionTask>(entity.tasks),
@@ -102,6 +106,7 @@ export async function createSession(params: {
   teacherId: string;
   provider: Provider;
   model: string;
+  approvalMode?: ApprovalMode;
   classRef?: string | null;
   messages?: ChatMessage[];
   tasks?: SessionTask[];
@@ -113,6 +118,7 @@ export async function createSession(params: {
     teacherId: params.teacherId,
     provider: params.provider,
     model: params.model,
+    approvalMode: params.approvalMode ?? "feedforward",
     classRef: params.classRef ?? null,
     messages: params.messages ?? [],
     tasks: params.tasks ?? [],
@@ -162,6 +168,7 @@ export async function appendSessionMessages(
     memoryContextPaths?: string[];
     activeSkills?: string[];
     classRef?: string | null;
+    approvalMode?: ApprovalMode;
   },
 ): Promise<SessionRecord | null> {
   const ds = await getDataSource();
@@ -184,6 +191,9 @@ export async function appendSessionMessages(
   }
   if (runtime?.classRef !== undefined) {
     existing.classRef = runtime.classRef;
+  }
+  if (runtime?.approvalMode !== undefined) {
+    existing.approvalMode = runtime.approvalMode;
   }
   if (runtime?.trace) {
     existing.traceHistory = [

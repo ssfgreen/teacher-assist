@@ -111,4 +111,46 @@ describe("agent loop", () => {
     );
     expect(result.pendingQuestion?.options).toEqual(["3B", "4A"]);
   });
+
+  it("requires approval before read_skill in feedforward mode", async () => {
+    const result = await runAgentLoop({
+      teacherId: "t1",
+      provider: "openai",
+      model: "mock-agentic-skill",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "Create a lesson" },
+      ],
+      options: {
+        approval: {
+          mode: "feedforward",
+        },
+      },
+    });
+
+    expect(result.status).toBe("awaiting_approval");
+    expect(result.pendingApproval?.kind).toBe("skill_selection");
+    expect(result.pendingApproval?.skills).toContain("backward-design");
+  });
+
+  it("skips read_skill approval when skill is already allowed", async () => {
+    const result = await runAgentLoop({
+      teacherId: "t1",
+      provider: "openai",
+      model: "mock-agentic-skill",
+      messages: [
+        { role: "system", content: "system" },
+        { role: "user", content: "Create a lesson" },
+      ],
+      options: {
+        approval: {
+          mode: "feedforward",
+          allowedSkillNames: ["backward-design"],
+        },
+      },
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.skillsLoaded).toContain("backward-design");
+  });
 });

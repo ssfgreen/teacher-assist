@@ -1,9 +1,11 @@
 import type {
+  ApprovalMode as SharedApprovalMode,
   ChatMessage as SharedChatMessage,
   Provider as SharedProvider,
 } from "../../shared/types";
 
 export type Provider = SharedProvider;
+export type ApprovalMode = SharedApprovalMode;
 
 export interface TeacherProfile {
   id: string;
@@ -21,6 +23,7 @@ export interface SessionRecord {
   teacherId: string;
   provider: Provider;
   model: string;
+  approvalMode: ApprovalMode;
   classRef?: string | null;
   messages: ChatMessage[];
   tasks?: Array<{ id: string; text: string; completed: boolean }>;
@@ -70,7 +73,8 @@ export interface ChatApiResponse {
     | "awaiting_feedforward"
     | "awaiting_reflection"
     | "awaiting_adjudication"
-    | "awaiting_user_question";
+    | "awaiting_user_question"
+    | "awaiting_approval";
   proposals?: MemoryProposal[];
   feedforward?: {
     summary: string;
@@ -89,6 +93,29 @@ export interface ChatApiResponse {
     question: string;
     options?: string[];
     allow_free_text: boolean;
+  };
+  approval?: {
+    actionId: string;
+    kind: "tool_call" | "skill_selection";
+    question: string;
+    options: string[];
+    allow_free_text: boolean;
+    approvalScope?: string;
+    skills?: string[];
+    contextSelection?: {
+      optional: Array<{
+        id: string;
+        label: string;
+        kind: "workspace" | "memory";
+        path?: string;
+      }>;
+      required: Array<{
+        id: string;
+        label: string;
+        kind: "workspace" | "system";
+        path?: string;
+      }>;
+    };
   };
   sessionId: string;
   messages: ChatMessage[];
@@ -173,6 +200,7 @@ export type TraceSpanKind =
   | "hook"
   | "skill"
   | "feedforward"
+  | "approval"
   | "reflection"
   | "adjudication";
 

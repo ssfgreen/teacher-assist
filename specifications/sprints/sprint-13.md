@@ -1,4 +1,4 @@
-# Sprint 13 - Accessibility, Polish, and Study Support
+# Sprint 13 - Research Mode and Production Hardening
 
 ## Alignment Status
 
@@ -7,25 +7,26 @@
 
 ## Goal
 
-Bring UX quality to study-ready standards with accessibility compliance and supporting research workflows.
+Add researcher-specific runtime controls while hardening reliability and operational safety for longer study runs.
 
 ## Frontend Scope
 
-- [ ] Keyboard navigation and focus management
-- [ ] Screen-reader semantics and ARIA coverage
-- [ ] Responsive refinement, loading skeletons, and transition polish
+- [ ] Research mode toggle and instrumentation UI
+- [ ] Expanded trace visibility and study controls
+- [ ] Data export interaction surfaces
 
 ## Backend Scope
 
-- [ ] Study-support capabilities (structured export/audit hooks)
-- [ ] Data-quality controls for research logging completeness
+- [ ] Production hardening (timeouts, retries, failure handling, observability)
+- [ ] Operational safeguards for longer sessions and concurrent users
+- [ ] Export pipelines for anonymized research datasets
 
 ## Shared Contracts
 
-- [ ] Accessibility behavior remains compatible with interactive hook states
-- [ ] Research exports preserve integrity and privacy constraints
+- [ ] Research-mode capability flags in API/user context
+- [ ] Stable export format for traces/sessions/memory events
 
 ## Test and Verification
 
-- [ ] Accessibility audits and keyboard/screen-reader regression tests
-- [ ] Data integrity checks for exported study artifacts
+- [ ] Research mode access and visibility tests
+- [ ] Reliability/load and failure-recovery tests

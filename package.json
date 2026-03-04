@@ -7,6 +7,7 @@
     "dev:frontend": "cd packages/frontend && bun run dev",
     "dev:backend": "cd packages/backend && bun run dev",
     "smoke:providers": "cd packages/backend && bun run smoke:providers",
+    "smoke:e2e": "cd packages/backend && bun run smoke:e2e",
     "lint": "biome check .",
     "format": "biome format --write ."
   },

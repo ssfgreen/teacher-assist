@@ -11,6 +11,7 @@ const TRACE_KIND_LABELS: Record<TraceSpanKind, string> = {
   hook: "Hook",
   skill: "Skill",
   feedforward: "Feedforward",
+  approval: "Approval",
   reflection: "Reflection",
   adjudication: "Adjudication",
 };

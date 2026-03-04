@@ -235,3 +235,28 @@ export function appendCommandReviewSpans(trace: ChatTrace): ChatTrace {
     summary: traceSummary(spans),
   };
 }
+
+export function appendApprovalSpan(
+  trace: ChatTrace,
+  label: string,
+  metadata?: Record<string, unknown>,
+): ChatTrace {
+  const endedAt = new Date().toISOString();
+  const spans: ChatTraceSpan[] = [
+    ...trace.spans,
+    {
+      id: randomUUID(),
+      kind: "approval",
+      label,
+      startedAt: trace.createdAt,
+      endedAt,
+      status: "pending",
+      metadata,
+    },
+  ];
+  return {
+    ...trace,
+    spans,
+    summary: traceSummary(spans),
+  };
+}

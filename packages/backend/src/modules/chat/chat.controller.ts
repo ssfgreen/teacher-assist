@@ -12,6 +12,7 @@ import type { Request, Response } from "express";
 import { AuthService } from "../auth/auth.service";
 import {
   type AdjudicationResponseBody,
+  type ApprovalResponseBody,
   type ChatRequestBody,
   ChatService,
   type FeedforwardResponseBody,
@@ -83,5 +84,15 @@ export class ChatController {
   ) {
     const teacher = await this.authService.requireTeacher(request);
     return this.chatService.handleQuestionResponse(teacher.id, body);
+  }
+
+  @Post("approval-response")
+  @HttpCode(200)
+  async approvalResponse(
+    @Req() request: Request,
+    @Body() body: ApprovalResponseBody,
+  ) {
+    const teacher = await this.authService.requireTeacher(request);
+    return this.chatService.handleApprovalResponse(teacher.id, body);
   }
 }

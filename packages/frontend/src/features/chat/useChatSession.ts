@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   sendAdjudicationResponse,
+  sendApprovalResponse,
   sendChatStream,
   sendFeedforwardResponse,
   sendQuestionResponse,
@@ -18,6 +19,7 @@ interface UseChatSessionParams {
   currentSession: SessionRecord | null;
   provider: "anthropic" | "openai";
   model: string;
+  approvalMode: "automation" | "feedforward";
   selectedCommandId: string;
   selectedClassRef: string;
   createNewSession: () => Promise<SessionRecord>;
@@ -48,12 +50,40 @@ type InteractiveState =
       options: string[];
       allowFreeText: boolean;
     }
+  | {
+      kind: "approval";
+      sessionId: string;
+      actionId: string;
+      approvalKind: "tool_call" | "skill_selection";
+      question: string;
+      options: string[];
+      allowFreeText: boolean;
+      approvalScope?: string;
+      skills: string[];
+      selectedSkills: string[];
+      contextSelection?: {
+        optional: Array<{
+          id: string;
+          label: string;
+          kind: "workspace" | "memory";
+          path?: string;
+        }>;
+        required: Array<{
+          id: string;
+          label: string;
+          kind: "workspace" | "system";
+          path?: string;
+        }>;
+      };
+      selectedContextIds: string[];
+    }
   | null;
 
 export function useChatSession({
   currentSession,
   provider,
   model,
+  approvalMode,
   selectedCommandId,
   selectedClassRef,
   createNewSession,
@@ -174,6 +204,28 @@ export function useChatSession({
       });
       return;
     }
+    if (response.status === "awaiting_approval" && response.approval) {
+      const skills = response.approval.skills ?? [];
+      const selectedContextIds =
+        response.approval.contextSelection?.optional.map((item) => item.id) ??
+        [];
+      setInteractiveInput(skills.join(","));
+      setInteractiveState({
+        kind: "approval",
+        sessionId: response.sessionId,
+        actionId: response.approval.actionId,
+        approvalKind: response.approval.kind,
+        question: response.approval.question,
+        options: response.approval.options,
+        allowFreeText: response.approval.allow_free_text,
+        approvalScope: response.approval.approvalScope,
+        skills,
+        selectedSkills: skills,
+        contextSelection: response.approval.contextSelection,
+        selectedContextIds,
+      });
+      return;
+    }
     setInteractiveState(null);
   };
 
@@ -241,6 +293,7 @@ export function useChatSession({
           sessionId: activeSession.id,
           provider,
           model,
+          approvalMode,
           command: selectedCommandId || undefined,
           classRef: selectedClassRef || undefined,
           messages: nextMessages,
@@ -381,6 +434,32 @@ export function useChatSession({
     );
   };
 
+  const submitApproval = async (params: {
+    decision:
+      | "approve"
+      | "always_allow"
+      | "deny"
+      | "approve_selected"
+      | "deny_all";
+    selectedSkills?: string[];
+    selectedContextIds?: string[];
+    alternateResponse?: string;
+  }) => {
+    if (interactiveState?.kind !== "approval") {
+      return;
+    }
+    await runInteractiveAction(() =>
+      sendApprovalResponse({
+        sessionId: interactiveState.sessionId,
+        actionId: interactiveState.actionId,
+        decision: params.decision,
+        selectedSkills: params.selectedSkills,
+        selectedContextIds: params.selectedContextIds,
+        alternateResponse: params.alternateResponse,
+      }),
+    );
+  };
+
   const cancelMessage = () => {
     abortControllerRef.current?.abort();
   };
@@ -404,6 +483,7 @@ export function useChatSession({
     submitReflection,
     submitAdjudication,
     submitQuestion,
+    submitApproval,
     cancelMessage,
   };
 }

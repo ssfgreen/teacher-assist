@@ -6,6 +6,7 @@
     "dev": "bun run --env-file ../../.env src/index.ts",
     "migrate": "bun run --env-file ../../.env src/migrate.ts",
     "smoke:providers": "bun run --env-file ../../.env src/smoke-providers.ts",
+    "smoke:e2e": "bun run --env-file ../../.env src/smoke-e2e.ts",
     "test": "bun test",
     "lint": "biome check ."
   },

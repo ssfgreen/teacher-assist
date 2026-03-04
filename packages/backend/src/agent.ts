@@ -6,13 +6,20 @@ import {
   listToolDefinitions,
 } from "./tools/registry";
 import { readSubagentDefinition } from "./tools/subagents";
-import type { ChatMessage, Provider, TokenUsage } from "./types";
+import type {
+  ApprovalMode,
+  ChatMessage,
+  Provider,
+  TokenUsage,
+  ToolCall,
+} from "./types";
 
 export type AgentStatus =
   | "success"
   | "error_max_turns"
   | "error_max_budget"
-  | "awaiting_user_question";
+  | "awaiting_user_question"
+  | "awaiting_approval";
 
 export interface AgentQuestionPayload {
   toolCallId: string;
@@ -22,12 +29,24 @@ export interface AgentQuestionPayload {
   toolInput: Record<string, unknown>;
 }
 
+export interface AgentApprovalPayload {
+  actionId: string;
+  kind: "tool_call" | "skill_selection";
+  question: string;
+  toolCalls: ToolCall[];
+  options: string[];
+  allowFreeText: boolean;
+  approvalScope?: string;
+  skills?: string[];
+}
+
 export interface AgentResult {
   status: AgentStatus;
   messages: ChatMessage[];
   usage: TokenUsage;
   skillsLoaded: string[];
   pendingQuestion?: AgentQuestionPayload;
+  pendingApproval?: AgentApprovalPayload;
 }
 
 export interface AgentStreamEvent {
@@ -50,6 +69,11 @@ interface RunAgentLoopParams {
       enabled?: boolean;
       depth?: number;
       maxDepth?: number;
+    };
+    approval?: {
+      mode: ApprovalMode;
+      alwaysAllowScopes?: string[];
+      allowedSkillNames?: string[];
     };
   };
 }
@@ -242,6 +266,79 @@ function parseSubagentInvocationInput(
   };
 }
 
+function toolApprovalScope(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): string {
+  if (toolName === "read_file") {
+    const path = typeof toolInput.path === "string" ? toolInput.path : "";
+    if (path.startsWith("classes/")) {
+      return "read_class_file";
+    }
+  }
+  if (toolName === "read_skill") {
+    return "read_skill_file";
+  }
+  return `tool:${toolName}`;
+}
+
+function isScopeAlwaysAllowed(
+  scope: string,
+  alwaysAllowScopes: string[] | undefined,
+): boolean {
+  if (!alwaysAllowScopes || alwaysAllowScopes.length === 0) {
+    return false;
+  }
+  return alwaysAllowScopes.includes(scope);
+}
+
+function buildToolApprovalPayload(params: {
+  turn: number;
+  toolCall: ToolCall;
+  scope: string;
+}): AgentApprovalPayload {
+  const path =
+    typeof params.toolCall.input.path === "string"
+      ? params.toolCall.input.path
+      : null;
+  const target =
+    typeof params.toolCall.input.target === "string"
+      ? params.toolCall.input.target
+      : null;
+  const detail = path
+    ? ` ${path}`
+    : target
+      ? ` ${target}`
+      : ` ${params.toolCall.name}`;
+  return {
+    actionId: `approval:${params.turn}:${params.toolCall.id}`,
+    kind: "tool_call",
+    question: `Can I run tool \`${params.toolCall.name}\` for${detail}?`,
+    toolCalls: [params.toolCall],
+    options: ["approve", "always_allow", "deny"],
+    allowFreeText: true,
+    approvalScope: params.scope,
+  };
+}
+
+function buildSkillApprovalPayload(params: {
+  turn: number;
+  toolCalls: ToolCall[];
+  skills: string[];
+}): AgentApprovalPayload {
+  return {
+    actionId: `approval:${params.turn}:skills`,
+    kind: "skill_selection",
+    question:
+      "I can read these skills before continuing. Select the skills you want me to load.",
+    toolCalls: params.toolCalls,
+    options: ["approve_selected", "always_allow", "deny_all"],
+    allowFreeText: false,
+    approvalScope: "read_skill_file",
+    skills: params.skills,
+  };
+}
+
 export async function runAgentLoop(
   params: RunAgentLoopParams,
 ): Promise<AgentResult> {
@@ -250,6 +347,11 @@ export async function runAgentLoop(
   const delegationEnabled = params.options?.delegation?.enabled ?? true;
   const delegationDepth = params.options?.delegation?.depth ?? 0;
   const delegationMaxDepth = params.options?.delegation?.maxDepth ?? 2;
+  const approvalMode = params.options?.approval?.mode ?? "automation";
+  const alwaysAllowScopes = params.options?.approval?.alwaysAllowScopes ?? [];
+  const allowedSkillNames = new Set(
+    params.options?.approval?.allowedSkillNames ?? [],
+  );
 
   const messages = [...params.messages];
   let usage = emptyUsage();
@@ -344,7 +446,12 @@ export async function runAgentLoop(
       messages.push({ role: "assistant", content: response.content });
     }
 
-    for (const toolCall of response.toolCalls) {
+    for (
+      let toolCallIndex = 0;
+      toolCallIndex < response.toolCalls.length;
+      toolCallIndex += 1
+    ) {
+      const toolCall = response.toolCalls[toolCallIndex] as ToolCall;
       await runHookPhase({
         hooks,
         phase: "preTool",
@@ -366,6 +473,53 @@ export async function runAgentLoop(
             toolInput: toolCall.input,
           }),
         };
+      }
+
+      if (approvalMode === "feedforward") {
+        if (toolCall.name === "read_skill") {
+          const pendingSkillCalls = response.toolCalls
+            .slice(toolCallIndex)
+            .filter((call) => call.name === "read_skill")
+            .map((call) => call as ToolCall);
+          const skillCandidates = [
+            ...new Set(
+              pendingSkillCalls
+                .map((call) => skillNameFromToolInput(call.input))
+                .filter((name): name is string => Boolean(name)),
+            ),
+          ];
+          const unresolved = skillCandidates.filter(
+            (name) => !allowedSkillNames.has(name),
+          );
+          if (unresolved.length > 0) {
+            return {
+              status: "awaiting_approval",
+              messages: messages.filter((message) => message.role !== "system"),
+              usage,
+              skillsLoaded: [...skillsLoaded],
+              pendingApproval: buildSkillApprovalPayload({
+                turn,
+                toolCalls: pendingSkillCalls,
+                skills: skillCandidates,
+              }),
+            };
+          }
+        } else {
+          const scope = toolApprovalScope(toolCall.name, toolCall.input);
+          if (!isScopeAlwaysAllowed(scope, alwaysAllowScopes)) {
+            return {
+              status: "awaiting_approval",
+              messages: messages.filter((message) => message.role !== "system"),
+              usage,
+              skillsLoaded: [...skillsLoaded],
+              pendingApproval: buildToolApprovalPayload({
+                turn,
+                toolCall,
+                scope,
+              }),
+            };
+          }
+        }
       }
 
       if (toolCall.name === "spawn_subagent") {
@@ -444,6 +598,11 @@ export async function runAgentLoop(
                 depth: delegationDepth + 1,
                 maxDepth: delegationMaxDepth,
               },
+              approval: {
+                mode: "automation",
+                alwaysAllowScopes: [],
+                allowedSkillNames: [],
+              },
             },
           });
 
@@ -499,7 +658,9 @@ export async function runAgentLoop(
             content:
               subagentStatus === "awaiting_user_question"
                 ? `ERROR: subagent ${definition.name} required user input unexpectedly`
-                : JSON.stringify(resultPayload, null, 2),
+                : subagentStatus === "awaiting_approval"
+                  ? `ERROR: subagent ${definition.name} required approval unexpectedly`
+                  : JSON.stringify(resultPayload, null, 2),
           });
         } catch (error) {
           const message =
@@ -608,6 +769,11 @@ export async function runAgentLoopStreaming(
   const delegationEnabled = params.options?.delegation?.enabled ?? true;
   const delegationDepth = params.options?.delegation?.depth ?? 0;
   const delegationMaxDepth = params.options?.delegation?.maxDepth ?? 2;
+  const approvalMode = params.options?.approval?.mode ?? "automation";
+  const alwaysAllowScopes = params.options?.approval?.alwaysAllowScopes ?? [];
+  const allowedSkillNames = new Set(
+    params.options?.approval?.allowedSkillNames ?? [],
+  );
   const chunkAssistantText =
     params.chunkAssistantText ??
     ((content: string) => {
@@ -731,7 +897,12 @@ export async function runAgentLoopStreaming(
       };
     }
 
-    for (const toolCall of response.toolCalls) {
+    for (
+      let toolCallIndex = 0;
+      toolCallIndex < response.toolCalls.length;
+      toolCallIndex += 1
+    ) {
+      const toolCall = response.toolCalls[toolCallIndex] as ToolCall;
       if (stopped()) {
         return {
           status: "success",
@@ -762,6 +933,53 @@ export async function runAgentLoopStreaming(
             toolInput: toolCall.input,
           }),
         };
+      }
+
+      if (approvalMode === "feedforward") {
+        if (toolCall.name === "read_skill") {
+          const pendingSkillCalls = response.toolCalls
+            .slice(toolCallIndex)
+            .filter((call) => call.name === "read_skill")
+            .map((call) => call as ToolCall);
+          const skillCandidates = [
+            ...new Set(
+              pendingSkillCalls
+                .map((call) => skillNameFromToolInput(call.input))
+                .filter((name): name is string => Boolean(name)),
+            ),
+          ];
+          const unresolved = skillCandidates.filter(
+            (name) => !allowedSkillNames.has(name),
+          );
+          if (unresolved.length > 0) {
+            return {
+              status: "awaiting_approval",
+              messages: messages.filter((message) => message.role !== "system"),
+              usage,
+              skillsLoaded: [...skillsLoaded],
+              pendingApproval: buildSkillApprovalPayload({
+                turn,
+                toolCalls: pendingSkillCalls,
+                skills: skillCandidates,
+              }),
+            };
+          }
+        } else {
+          const scope = toolApprovalScope(toolCall.name, toolCall.input);
+          if (!isScopeAlwaysAllowed(scope, alwaysAllowScopes)) {
+            return {
+              status: "awaiting_approval",
+              messages: messages.filter((message) => message.role !== "system"),
+              usage,
+              skillsLoaded: [...skillsLoaded],
+              pendingApproval: buildToolApprovalPayload({
+                turn,
+                toolCall,
+                scope,
+              }),
+            };
+          }
+        }
       }
 
       if (toolCall.name === "spawn_subagent") {
@@ -836,6 +1054,11 @@ export async function runAgentLoopStreaming(
                   depth: delegationDepth + 1,
                   maxDepth: delegationMaxDepth,
                 },
+                approval: {
+                  mode: "automation",
+                  alwaysAllowScopes: [],
+                  allowedSkillNames: [],
+                },
               },
             });
 
@@ -891,7 +1114,9 @@ export async function runAgentLoopStreaming(
               content:
                 subagentStatus === "awaiting_user_question"
                   ? `ERROR: subagent ${definition.name} required user input unexpectedly`
-                  : JSON.stringify(resultPayload, null, 2),
+                  : subagentStatus === "awaiting_approval"
+                    ? `ERROR: subagent ${definition.name} required approval unexpectedly`
+                    : JSON.stringify(resultPayload, null, 2),
             };
           } catch (error) {
             const message =
